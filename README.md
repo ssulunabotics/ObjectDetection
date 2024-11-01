@@ -1,6 +1,10 @@
-# objectdetection470
+# ObjectDetection
 ## Map
 
+<h2>Collaborators:</h2>
+Jordan Nakamoto, Logan Puntous, Spencer Odom  
+
+<h2>Files:</h2>
 
 |_\ 3js  
 ThreeJS arena simulation environment  
