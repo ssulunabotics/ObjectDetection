@@ -1,5 +1,5 @@
 # ObjectDetection
-## Map
+## A CS470 project on rock/crater detection
 
 <h2>Collaborators:</h2>
 Jordan Nakamoto, Logan Puntous, Spencer Odom  
