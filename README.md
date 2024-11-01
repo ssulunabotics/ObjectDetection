@@ -3,6 +3,7 @@
 
 <h2>Collaborators:</h2>
 Jordan Nakamoto, Logan Puntous, Spencer Odom  
+Original Github: https://github.com/jordannakamoto/objectdetection470.git  
 
 <h2>Files:</h2>
 
