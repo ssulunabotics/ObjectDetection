@@ -1,5 +1,5 @@
-Model/best.pt
+#Model/best.pt
 
-Model/Crater_noaug_sgd_2batch-lastepoch99.pth
+#Model/Crater_noaug_sgd_2batch-lastepoch99.pth
 
-Model/Crater_noaug_sgd_2batch-lastepoch199.pth
+#Model/Crater_noaug_sgd_2batch-lastepoch199.pth
