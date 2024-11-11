@@ -29,8 +29,8 @@ renderer.shadowMap.enabled = true; // Enable shadow mapping
 document.body.appendChild(renderer.domElement);
 
 // Create a plane geometry to represent the heightmap
-const width = 256; // Width of the heightmap
-const height = 256; // Height of the heightmap
+const width = 512; // Width of the heightmap
+const height = 512; // Height of the heightmap
 const geometry = new THREE.PlaneGeometry(width, height, width - 1, height - 1);
 
 // Create a gray texture
@@ -47,10 +47,10 @@ const noiseCtx = noiseCanvas.getContext('2d');
 
 /*================================================================
 
-Generate HeightMap + Potholes
+Generate HeightMap + Potholes + Rocks
+
 
 ================================================================*/
-
 // Function to get the height safely
 function getHeight(y, x) {
     // Ensure x and y are within the bounds of the heightmap
@@ -137,7 +137,6 @@ function generateHeightmap() {
         }
     }
 
-
     // Store the generated heightmap data
     lastHeightmapData = heightData;
 
@@ -153,6 +152,71 @@ function generateHeightmap() {
     const normals = calculateNormals(heightData);
     geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
 }
+const noise = new SimplexNoise();
+
+function generateRocks() {
+    const rockCount = 10; // Number of rocks to generate
+    const minRockSize = 7; // Minimum size of rocks
+    const maxRockSize = 20; // Maximum size of rocks
+
+    for (let i = 0; i < rockCount; i++) {
+        // Randomly size each rock
+        const rockSize = Math.random() * (maxRockSize - minRockSize) + minRockSize;
+
+        // Create a dodecahedron geometry for a more rock-like shape
+        const rockGeometry = new THREE.DodecahedronGeometry(rockSize / 2, 0); // Low-poly dodecahedron shape
+
+        // Apply Perlin noise for cohesive distortion
+        const positionAttribute = rockGeometry.attributes.position;
+        for (let j = 0; j < positionAttribute.count; j++) {
+            const x = positionAttribute.getX(j);
+            const y = positionAttribute.getY(j);
+            const z = positionAttribute.getZ(j);
+
+            // Use Perlin noise based on vertex position to distort cohesively
+            const noiseValue = noise.noise3D(x * 0.1, y * 0.1, z * 0.1); // Adjust scale as needed
+            const displacement = noiseValue * rockSize * 0.1; // Control the amount of displacement
+
+            // Apply the displacement proportionally along the vertex's direction
+            positionAttribute.setX(j, x + x * displacement);
+            positionAttribute.setY(j, y + y * displacement);
+            positionAttribute.setZ(j, z + z * displacement);
+        }
+        rockGeometry.computeVertexNormals(); // Recompute normals after distortion
+
+// Set a light gray color with slight random variation
+const grayBase = 0xD3D3D3; // Base color for light gray (hexadecimal for RGB 211, 211, 211)
+const variation = Math.random() * 0.1 - 0.05; // Small variation factor
+
+// Adjust color slightly for each rock to create natural variation
+const rockColor = new THREE.Color(grayBase).offsetHSL(0, 0, variation);
+        const rockMaterial = new THREE.MeshStandardMaterial({ 
+            color: rockColor, 
+            roughness: 0.9 + Math.random() * 0.1,
+            metalness: 0.1
+        });
+        const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+        rock.castShadow = true; // Enable shadow casting for rocks
+
+        // Randomly position each rock on the terrain
+        const rockX = Math.random() * width - width / 2;
+        const rockZ = Math.random() * height - height / 2;
+
+        // Calculate height at the rock position from the heightmap
+        const heightX = Math.floor((rockX + width / 2) / width * geometry.parameters.widthSegments);
+        const heightZ = Math.floor((rockZ + height / 2) / height * geometry.parameters.heightSegments);
+        const heightIndex = heightX * width + heightZ;
+        const terrainHeight = lastHeightmapData ? lastHeightmapData[heightIndex] : 0;
+
+        // Position the rock at the calculated height
+        rock.position.set(rockX, terrainHeight + rockSize / 2, rockZ);
+
+        // Add the rock to the scene
+        scene.add(rock);
+    }
+}
+    generateRocks();
+
 
 /*================================================================
 
@@ -165,7 +229,7 @@ camera.position.set(128, 50, 128); // Position the camera above the heightmap
 camera.lookAt(new THREE.Vector3(128, 0, 128));
 
 // Add orbit controls
-const controls = new OrbitControls(camera, renderer.domElement);
+// const controls = new OrbitControls(camera, renderer.domElement);
 
 // Add floodlights
 const LIGHT_INTENSITY = .4;
@@ -228,72 +292,72 @@ function createWalls() {
 
 }
 
-// 2a. DROP SAMPLE BEACON CYAN
-function dropColorBlockBeaconCyan() {
-    const boxWidth = 10; // Width of the box
-    const boxHeight = 10; // Height of the box
-    const boxDepth = 2; // Depth of the box
+// // 2a. DROP SAMPLE BEACON CYAN
+// function dropColorBlockBeaconCyan() {
+//     const boxWidth = 10; // Width of the box
+//     const boxHeight = 10; // Height of the box
+//     const boxDepth = 2; // Depth of the box
 
-    // Create box geometry
-    const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+//     // Create box geometry
+//     const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
 
-    // Create materials for the box sides
-    const materials = [
-        new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
-        new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
-        new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
-        new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
-        new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
-        new THREE.MeshStandardMaterial({ color: 0x00FFFF })  // Cyan
-    ];
+//     // Create materials for the box sides
+//     const materials = [
+//         new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
+//         new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
+//         new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
+//         new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
+//         new THREE.MeshStandardMaterial({ color: 0x00FFFF }), // Cyan
+//         new THREE.MeshStandardMaterial({ color: 0x00FFFF })  // Cyan
+//     ];
 
-    // Create a mesh with the geometry and the materials
-    const box = new THREE.Mesh(boxGeometry, materials);
+//     // Create a mesh with the geometry and the materials
+//     const box = new THREE.Mesh(boxGeometry, materials);
 
-    // Position the box
-    box.position.set(100, 8, 122); // Adjust the position as needed
+//     // Position the box
+//     box.position.set(100, 8, 122); // Adjust the position as needed
 
-    // Enable shadows if needed
-    box.castShadow = true; // Enable shadow casting for the box
-    box.receiveShadow = true; // Enable shadow receiving for the box
+//     // Enable shadows if needed
+//     box.castShadow = true; // Enable shadow casting for the box
+//     box.receiveShadow = true; // Enable shadow receiving for the box
 
-    // Add the box to the scene
-    scene.add(box);
-}
+//     // Add the box to the scene
+//     scene.add(box);
+// }
 
-// 2b. DROP SAMPLE BEACON MAGENTA
-function dropColorBlockBeaconMagenta() {
-    const boxWidth = 10; // Width of the box
-    const boxHeight = 10; // Height of the box
-    const boxDepth = 2; // Depth of the box
+// // 2b. DROP SAMPLE BEACON MAGENTA
+// function dropColorBlockBeaconMagenta() {
+//     const boxWidth = 10; // Width of the box
+//     const boxHeight = 10; // Height of the box
+//     const boxDepth = 2; // Depth of the box
 
-    // Create box geometry
-    const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+//     // Create box geometry
+//     const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
 
-    // Create materials for the box sides
-    const materials = [
-        new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
-        new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
-        new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
-        new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
-        new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
-        new THREE.MeshStandardMaterial({ color: 0xFF00FF })  // Magenta
-    ];
+//     // Create materials for the box sides
+//     const materials = [
+//         new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
+//         new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
+//         new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
+//         new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
+//         new THREE.MeshStandardMaterial({ color: 0xFF00FF }), // Magenta
+//         new THREE.MeshStandardMaterial({ color: 0xFF00FF })  // Magenta
+//     ];
 
-    // Create a mesh with the geometry and the materials
-    const box = new THREE.Mesh(boxGeometry, materials);
+//     // Create a mesh with the geometry and the materials
+//     const box = new THREE.Mesh(boxGeometry, materials);
 
-    // Position the box
-    box.position.set(122, 8, 80); // Adjust the position as needed
-    box.rotation.y = Math.PI/2;
+//     // Position the box
+//     box.position.set(122, 8, 80); // Adjust the position as needed
+//     box.rotation.y = Math.PI/2;
 
-    // Enable shadows if needed
-    box.castShadow = true; // Enable shadow casting for the box
-    box.receiveShadow = true; // Enable shadow receiving for the box
+//     // Enable shadows if needed
+//     box.castShadow = true; // Enable shadow casting for the box
+//     box.receiveShadow = true; // Enable shadow receiving for the box
 
-    // Add the box to the scene
-    scene.add(box);
-}
+//     // Add the box to the scene
+//     scene.add(box);
+// }
 
 
 
@@ -302,10 +366,10 @@ function dropColorBlockBeaconMagenta() {
 // Generate the Arena
 //
 generateHeightmap();
-createWalls();
-dropColorBlockBeaconCyan()
-dropColorBlockBeaconMagenta()
-// ___________________
+// createWalls();
+// dropColorBlockBeaconCyan()
+// dropColorBlockBeaconMagenta()
+// // ___________________
 
 /*================================================================
 
@@ -336,10 +400,78 @@ function visualizeNoise() {
 // Event listener for button
 document.getElementById('generateNoiseBtn').addEventListener('click', visualizeNoise);
 
-// Render loop
+// Fixed height for the camera
+const fixedHeight = 50;
+camera.position.set(128, fixedHeight, 128); // Set initial camera position
+
+// Variables to track camera movement and rotation speed
+const moveSpeed = 1; // Adjust this value for speed of movement
+const rotationSpeed = 0.01; // Adjust this value for speed of rotation
+
+// Update the camera position and rotation based on key states
+const keyState = {}; // To track which keys are pressed
+
+// Event listeners for keydown and keyup to track key states
+document.addEventListener('keydown', (event) => {
+    event.preventDefault();
+    keyState[event.key.toLowerCase()] = true;
+});
+
+document.addEventListener('keyup', (event) => {
+    event.preventDefault();
+    keyState[event.key.toLowerCase()] = false;
+});
+
+
+
+function updateCamera() {
+    // Get the forward and right directions based on the camera's orientation
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward); // Forward direction (relative to where the camera is pointing)
+    
+// Calculate the true right direction by crossing forward with the world up vector
+const right = new THREE.Vector3();
+right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize(); // Right on the horizontal plane
+    
+
+    // Camera movement with WASD keys relative to the camera's direction
+    if (keyState['w']) {
+        camera.position.add(forward.clone().multiplyScalar(moveSpeed)); // Move forward
+    }
+    if (keyState['s']) {
+        camera.position.add(forward.clone().multiplyScalar(-moveSpeed)); // Move backward
+    }
+    if (keyState['a']) {
+        camera.position.add(right.clone().multiplyScalar(-moveSpeed)); // Move left
+    }
+    if (keyState['d']) {
+        camera.position.add(right.clone().multiplyScalar(moveSpeed)); // Move right
+    }
+
+    // Ensure the camera stays at a fixed height
+    camera.position.y = fixedHeight;
+
+    // Camera tilt and pan with arrow keys (relative to camera's local orientation)
+    if (keyState['arrowup']) {
+        camera.rotateX(rotationSpeed); // Tilt up
+    }
+    if (keyState['arrowdown']) {
+        camera.rotateX(-rotationSpeed); // Tilt down
+    }
+    // Camera pan with arrow keys (relative to the horizontal plane, not affected by tilt)
+    if (keyState['arrowleft']) {
+        camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), rotationSpeed); // Pan left on world Y-axis
+    }
+    if (keyState['arrowright']) {
+        camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), -rotationSpeed); // Pan right on world Y-axis
+    }
+}
+
+// Modify the animate function to update the camera
 function animate() {
     requestAnimationFrame(animate);
-    controls.update(); // Update the controls
+    updateCamera(); // Call the camera update function
+    // controls.update(); // Update the controls
     renderer.render(scene, camera);
 }
 
