@@ -525,7 +525,7 @@ function updateGuidelines(drivabilityScores) {
     let maxSum = -Infinity;
     let maxIndex = 0;
     for (let i = 0; i < numSlices - 2; i++) {
-        const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2];
+        const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2] + drivabilityScores[i + 3] + drivabilityScores[i + 4];
         if (sum > maxSum) {
             maxSum = sum;
             maxIndex = i;
@@ -543,7 +543,7 @@ function updateGuidelines(drivabilityScores) {
         region.style.top = '0';
 
         // Highlight the three adjacent regions with the highest scores
-        if (i >= maxIndex && i < maxIndex + 3) {
+        if (i >= maxIndex && i < maxIndex + 5) {
             region.style.backgroundColor = 'rgba(173, 216, 230, 0.2)'; // Light blue with low opacity
         }
 
@@ -595,7 +595,7 @@ setInterval(processCanvas, 1000); // Or integrate with your animate pipeline
 function openCvReady() {
     cv['onRuntimeInitialized'] = () => {
         cv.FS_createPath("/", "working", true, true);
-        setInterval(processCanvas, 1000); // Run processing every 500 ms
+        setInterval(processCanvas, 10); // Run processing every 500 ms
     };
 }
 openCvReady();
