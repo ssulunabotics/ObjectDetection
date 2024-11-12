@@ -12,13 +12,16 @@
 
 import * as THREE from 'three';
 
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { LoopSubdivision } from 'https://unpkg.com/three-subdivide/build/index.module.js';
+
+// import SubdivisionModifier from 'three/addons/modifiers/SubdivisionModifier.js'; // Import if available
 
 /*================================================================
 
 Setup
 
 ================================================================*/
+
 
 // Create the scene, camera, and renderer
 const scene = new THREE.Scene();
@@ -34,16 +37,16 @@ const height = 512; // Height of the heightmap
 const geometry = new THREE.PlaneGeometry(width, height, width - 1, height - 1);
 
 // Create a gray texture
-const texture = new THREE.TextureLoader().load('../textures/regolith1.jpg'); // Replace with your texture path
+const texture = new THREE.TextureLoader().load('../textures/regolith2.jpg'); // Replace with your texture path
 const material = new THREE.MeshStandardMaterial({ map: texture, wireframe: false });
 const plane = new THREE.Mesh(geometry, material);
 plane.receiveShadow = true; // Make sure the plane can receive shadows
 plane.rotation.x = -Math.PI / 2; // Rotate the plane to make it horizontal
 scene.add(plane);
 
-// Create a canvas for noise display
-const noiseCanvas = document.getElementById('noiseCanvas');
-const noiseCtx = noiseCanvas.getContext('2d');
+// // Create a canvas for noise display
+// const noiseCanvas = document.getElementById('noiseCanvas');
+// const noiseCtx = noiseCanvas.getContext('2d');
 
 /*================================================================
 
@@ -163,40 +166,53 @@ function generateRocks() {
         // Randomly size each rock
         const rockSize = Math.random() * (maxRockSize - minRockSize) + minRockSize;
 
-        // Create a dodecahedron geometry for a more rock-like shape
-        const rockGeometry = new THREE.DodecahedronGeometry(rockSize / 2, 0); // Low-poly dodecahedron shape
+        // Use IcosahedronGeometry for a natural polyhedral shape
+        let rockGeometry = new THREE.IcosahedronGeometry(rockSize / 2, 1); // Lower initial detail level
 
-        // Apply Perlin noise for cohesive distortion
+        // Apply strong Perlin noise-based displacement for pronounced jaggedness
         const positionAttribute = rockGeometry.attributes.position;
         for (let j = 0; j < positionAttribute.count; j++) {
             const x = positionAttribute.getX(j);
             const y = positionAttribute.getY(j);
             const z = positionAttribute.getZ(j);
 
-            // Use Perlin noise based on vertex position to distort cohesively
-            const noiseValue = noise.noise3D(x * 0.1, y * 0.1, z * 0.1); // Adjust scale as needed
-            const displacement = noiseValue * rockSize * 0.1; // Control the amount of displacement
+            // Intense noise for rugged, jagged look
+            const noiseValue = noise.noise3D(x * 0.15, y * 0.15, z * 0.15);
+            const displacement = noiseValue * rockSize * 0.3; // Higher displacement factor
 
-            // Apply the displacement proportionally along the vertex's direction
-            positionAttribute.setX(j, x + x * displacement);
-            positionAttribute.setY(j, y + y * displacement);
-            positionAttribute.setZ(j, z + z * displacement);
+            // Apply the displacement along the vertex's normal
+            const nx = x + (x / rockSize) * displacement;
+            const ny = y + (y / rockSize) * displacement;
+            const nz = z + (z / rockSize) * displacement;
+
+            positionAttribute.setXYZ(j, nx, ny, nz);
         }
-        rockGeometry.computeVertexNormals(); // Recompute normals after distortion
+        rockGeometry.computeVertexNormals();
 
-// Set a light gray color with slight random variation
-const grayBase = 0xD3D3D3; // Base color for light gray (hexadecimal for RGB 211, 211, 211)
-const variation = Math.random() * 0.1 - 0.05; // Small variation factor
+        // Apply LoopSubdivision smoothing after displacement
+        rockGeometry = LoopSubdivision.modify(rockGeometry, 1); // Apply one level of subdivision
 
-// Adjust color slightly for each rock to create natural variation
-const rockColor = new THREE.Color(grayBase).offsetHSL(0, 0, variation);
-        const rockMaterial = new THREE.MeshStandardMaterial({ 
-            color: rockColor, 
-            roughness: 0.9 + Math.random() * 0.1,
-            metalness: 0.1
+        // Set a light gray color with slight variation for each rock
+        const grayBase = 0xD3D3D3; // Light gray color
+        const variation = Math.random() * 0.1 - 0.05;
+        const rockColor = new THREE.Color(grayBase).offsetHSL(0, 0, variation);
+
+        const rockMaterial = new THREE.MeshStandardMaterial({
+            color: rockColor,
+            roughness: 0.85 + Math.random() * 0.1,
+            metalness: 0.05,
         });
+
+        // Create the rock mesh
         const rock = new THREE.Mesh(rockGeometry, rockMaterial);
-        rock.castShadow = true; // Enable shadow casting for rocks
+        rock.castShadow = true;
+
+        // Apply non-uniform scaling for natural, irregular rock shapes
+        rock.scale.set(
+            1 + Math.random() * 0.2,
+            1 + Math.random() * 0.2,
+            1 + Math.random() * 0.2
+        );
 
         // Randomly position each rock on the terrain
         const rockX = Math.random() * width - width / 2;
@@ -209,14 +225,14 @@ const rockColor = new THREE.Color(grayBase).offsetHSL(0, 0, variation);
         const terrainHeight = lastHeightmapData ? lastHeightmapData[heightIndex] : 0;
 
         // Position the rock at the calculated height
-        rock.position.set(rockX, terrainHeight + rockSize / 2, rockZ);
+        rock.position.set(rockX, terrainHeight - 5 + rockSize / 2, rockZ);
 
         // Add the rock to the scene
         scene.add(rock);
     }
 }
-    generateRocks();
 
+generateRocks();
 
 /*================================================================
 
@@ -398,7 +414,7 @@ function visualizeNoise() {
 }
 
 // Event listener for button
-document.getElementById('generateNoiseBtn').addEventListener('click', visualizeNoise);
+// document.getElementById('generateNoiseBtn').addEventListener('click', visualizeNoise);
 
 // Fixed height for the camera
 const fixedHeight = 50;
@@ -505,7 +521,32 @@ function updateGuidelines(drivabilityScores) {
     const sliceWidth = canvas.width / numSlices; // Use canvas width, not window
     const overlayHeight = canvas.height; // Use canvas height, not window
 
+    // Find the three adjacent regions with the highest combined score
+    let maxSum = -Infinity;
+    let maxIndex = 0;
+    for (let i = 0; i < numSlices - 2; i++) {
+        const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2];
+        if (sum > maxSum) {
+            maxSum = sum;
+            maxIndex = i;
+        }
+    }
+
     for (let i = 0; i < numSlices; i++) {
+        // Create a div to represent each guideline region
+        const region = document.createElement('div');
+        region.className = 'guideline-region';
+        region.style.width = `${sliceWidth}px`;
+        region.style.height = `${overlayHeight}px`;
+        region.style.left = `${i * sliceWidth}px`;
+        region.style.position = 'absolute';
+        region.style.top = '0';
+
+        // Highlight the three adjacent regions with the highest scores
+        if (i >= maxIndex && i < maxIndex + 3) {
+            region.style.backgroundColor = 'rgba(173, 216, 230, 0.2)'; // Light blue with low opacity
+        }
+
         // Create line for slice boundary
         const line = document.createElement('div');
         line.className = 'guideline-line';
@@ -520,6 +561,9 @@ function updateGuidelines(drivabilityScores) {
         score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
         score.style.top = `${overlayHeight / 3}px`;
         guidelinesOverlay.appendChild(score);
+
+        // Append region div for background color
+        guidelinesOverlay.appendChild(region);
     }
 }
 
