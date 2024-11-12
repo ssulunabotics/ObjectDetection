@@ -9,6 +9,30 @@
         canvas { display: block; }
         #noiseCanvas { margin-left: 20px; border: 1px solid black; }
         #controls { position: absolute; top: 20px; left: 20px; }
+
+        /* Styles for drivability guidelines overlay */
+        #guidelines-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none; /* Prevent interaction */
+        }
+
+        /* Style for guideline lines */
+        .guideline-line {
+            position: absolute;
+            width: 2px;
+            background-color: blue;
+            opacity: 0.5;
+        }
+
+        /* Style for drivability score labels */
+        .guideline-score {
+            position: absolute;
+            color: red;
+            font-weight: bold;
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -16,6 +40,8 @@
         <button id="generateNoiseBtn">Show Noise Generation</button>
     </div>
     <canvas id="noiseCanvas" width="256" height="256"></canvas>
+    <div id="guidelines-overlay"></div> <!-- Overlay for guidelines -->
+
     <script type="importmap">
       {
         "imports": {
@@ -24,6 +50,13 @@
         }
       }
     </script>
+    <script>
+      var Module = {
+          TOTAL_MEMORY: 268435456, // 256 MB
+          ALLOW_MEMORY_GROWTH: 1   // Enable memory growth
+      };
+    </script>
+    <script src="https://docs.opencv.org/4.5.2/opencv.js" type="text/javascript"></script>
     <script src="https://cdn.jsdelivr.net/npm/simplex-noise@latest/simplex-noise.min.js"></script>
     <script type="module" src="world.js"></script>
 </body>

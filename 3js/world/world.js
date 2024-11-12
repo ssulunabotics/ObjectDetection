@@ -23,7 +23,7 @@ Setup
 // Create the scene, camera, and renderer
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer();
+const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true; // Enable shadow mapping
 document.body.appendChild(renderer.domElement);
@@ -476,3 +476,82 @@ function animate() {
 }
 
 animate();
+
+// Assume renderer is your THREE.WebGLRenderer
+const canvas = renderer.domElement; // Access the main Three.js canvas
+
+// Overlay div for displaying drivability guidelines directly
+const guidelinesOverlay = document.createElement('div');
+guidelinesOverlay.id = 'guidelines-overlay';
+document.body.appendChild(guidelinesOverlay); // Add overlay div to DOM
+
+// Function to adjust overlay size to match canvas
+function adjustGuidelinesOverlay() {
+    guidelinesOverlay.style.width = `${canvas.width}px`;
+    guidelinesOverlay.style.height = `${canvas.height}px`;
+    guidelinesOverlay.style.top = `${canvas.offsetTop}px`;
+    guidelinesOverlay.style.left = `${canvas.offsetLeft}px`;
+}
+
+// Call this initially and on resize
+window.addEventListener('resize', adjustGuidelinesOverlay);
+adjustGuidelinesOverlay(); // Initial call
+
+// Function to update drivability guidelines on overlay
+function updateGuidelines(drivabilityScores) {
+    guidelinesOverlay.innerHTML = ''; // Clear previous guidelines
+
+    const numSlices = drivabilityScores.length;
+    const sliceWidth = canvas.width / numSlices; // Use canvas width, not window
+    const overlayHeight = canvas.height; // Use canvas height, not window
+
+    for (let i = 0; i < numSlices; i++) {
+        // Create line for slice boundary
+        const line = document.createElement('div');
+        line.className = 'guideline-line';
+        line.style.left = `${(i + 1) * sliceWidth}px`;
+        line.style.height = `${overlayHeight}px`;
+        guidelinesOverlay.appendChild(line);
+
+        // Create score label
+        const score = document.createElement('span');
+        score.className = 'guideline-score';
+        score.innerText = drivabilityScores[i].toFixed(2);
+        score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
+        score.style.top = `${overlayHeight / 3}px`;
+        guidelinesOverlay.appendChild(score);
+    }
+}
+
+// Main script
+const worker = new Worker('processCanvasWorker.js');
+
+// Handle message from the worker
+worker.onmessage = function (event) {
+    const { drivabilityScores } = event.data;
+    updateGuidelines(drivabilityScores); // Update guidelines with the processed scores
+};
+
+function processCanvas() {
+    const gl = renderer.getContext();
+    const width = renderer.domElement.width;
+    const height = renderer.domElement.height;
+    const pixels = new Uint8Array(width * height * 4);
+
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // Send pixel data to worker
+    worker.postMessage({ pixels, width, height });
+}
+
+// Call processCanvas periodically or on demand
+setInterval(processCanvas, 1000); // Or integrate with your animate pipeline
+
+// Ensure OpenCV.js is ready before running
+function openCvReady() {
+    cv['onRuntimeInitialized'] = () => {
+        cv.FS_createPath("/", "working", true, true);
+        setInterval(processCanvas, 1000); // Run processing every 500 ms
+    };
+}
+openCvReady();
