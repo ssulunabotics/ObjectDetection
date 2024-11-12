@@ -1,0 +1,3 @@
+Give a goal position
+
+Only switch off of driving forward if confidence score drops below some threshold
