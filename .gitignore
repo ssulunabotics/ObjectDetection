@@ -1,5 +1,6 @@
 /Data/rocksdataset/**
 /Data/sample_png_labels/**
+/Model/grounding_dino_test
 
 #Model/best.pt
 
