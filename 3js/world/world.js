@@ -47,11 +47,38 @@ scene.add(plane);
 // // Create a canvas for noise display
 // const noiseCanvas = document.getElementById('noiseCanvas');
 // const noiseCtx = noiseCanvas.getContext('2d');
+// SETUP AUTONOMOUS MODE
+// Floating button panel for autonomous controls
+const controlPanel = document.createElement('div');
+controlPanel.id = 'control-panel';
+controlPanel.style.position = 'fixed';
+controlPanel.style.bottom = '20px';
+controlPanel.style.left = '20px';
+controlPanel.style.padding = '10px';
+controlPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+controlPanel.style.borderRadius = '5px';
+controlPanel.style.zIndex = '1000';
+document.body.appendChild(controlPanel);
+
+// Play button
+const playButton = document.createElement('button');
+playButton.innerText = 'Play';
+playButton.style.marginRight = '10px';
+playButton.onclick = togglePlay;
+controlPanel.appendChild(playButton);
+
+// Step Forward button
+const stepButton = document.createElement('button');
+stepButton.innerText = 'Step Forward';
+stepButton.onclick = stepForward;
+controlPanel.appendChild(stepButton);
+
+
+let drivabilityScores = [];
 
 /*================================================================
 
 Generate HeightMap + Potholes + Rocks
-
 
 ================================================================*/
 // Function to get the height safely
@@ -482,12 +509,106 @@ right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize(); // Right on
         camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), -rotationSpeed); // Pan right on world Y-axis
     }
 }
+// [AUTONOMOUS DRIVE MODE] ----------------------------------------------------------------
+let isPlaying = false;
+let targetX = null;
+const panSpeed = 0.01; // Adjust pan speed for smooth panning
+const forwardDistance = 5; // Distance to move forward
+let shouldPan = false; // Flag to control panning only when stepForward is called
+
+// Toggle Play mode
+function togglePlay() {
+    isPlaying = !isPlaying;
+    playButton.innerText = isPlaying ? 'Pause' : 'Play';
+}
+
+// Function to start panning to target path once
+function startPanningToPath(bestPathIndex) {
+    const sliceWidth = width / drivabilityScores.length;
+    targetX = (bestPathIndex + 0.5) * sliceWidth - width / 2;
+    shouldPan = true; // Enable panning
+}
+
+// Function to step forward by finding and centering the best path
+function stepForward() {
+    const bestPathIndex = findBestPath();
+    if (bestPathIndex !== -1) {
+        startPanningToPath(bestPathIndex);
+    }
+}
+
+// Find the best path index based on drivability scores
+function findBestPath() {
+    if (!drivabilityScores.length) return -1;
+
+    // Find the five adjacent slices with the highest combined drivability score
+    let maxSum = -Infinity;
+    let bestIndex = 0;
+    for (let i = 0; i < drivabilityScores.length - 4; i++) { // Adjust loop to account for five slices
+        const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2] + drivabilityScores[i + 3] + drivabilityScores[i + 4];
+        if (sum > maxSum) {
+            maxSum = sum;
+            bestIndex = i + 2; // Center on the middle of the five slices
+        }
+    }
+    return bestIndex;
+}
+
+// Smoothly pan the camera to center on the target X position
+function updateCameraPanning() {
+    if (targetX !== null && shouldPan) {
+        // Calculate the difference in X and Z to the target position
+        const deltaX = targetX - camera.position.x;
+        const deltaZ = -10; // Assuming a fixed look-ahead distance on Z
+
+        // Calculate the horizontal target angle on the Y-axis
+        const targetAngle = Math.atan2(deltaX, deltaZ);
+
+        // Calculate the difference between the current Y-axis rotation and target rotation
+        let angleDifference = targetAngle - camera.rotation.y;
+
+        // Normalize angleDifference to be within the range [-PI, PI]
+        angleDifference = ((angleDifference + Math.PI) % (2 * Math.PI)) - Math.PI;
+
+        // If the angle difference is small enough, finish panning
+        if (Math.abs(angleDifference) < 1) { // Smaller tolerance for accuracy
+            shouldPan = false; // Stop panning
+            targetX = null; // Clear target
+            moveCameraForward(); // Move forward once centered
+        } else {
+            // Apply incremental rotation towards the target
+            const rotationStep = Math.sign(angleDifference) * panSpeed;
+            camera.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), -rotationStep);
+        }
+    }
+}
+
+// Move the camera forward by a set distance
+function moveCameraForward() {
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    camera.position.add(forward.multiplyScalar(forwardDistance)); // Move forward
+}
+
+// Update the camera in Play mode
+function updateAutonomousMode() {
+    if (isPlaying) {
+        // If playing, repeatedly find and center the best path
+        if (!shouldPan) {
+            stepForward();
+        }
+        updateCameraPanning();
+    } else if (shouldPan) {
+        // If not playing, allow single-step panning when stepForward is called
+        updateCameraPanning();
+    }
+}
 
 // Modify the animate function to update the camera
 function animate() {
     requestAnimationFrame(animate);
     updateCamera(); // Call the camera update function
-    // controls.update(); // Update the controls
+    updateAutonomousMode(); // Autonomous camera updates
     renderer.render(scene, camera);
 }
 
@@ -572,7 +693,7 @@ const worker = new Worker('processCanvasWorker.js');
 
 // Handle message from the worker
 worker.onmessage = function (event) {
-    const { drivabilityScores } = event.data;
+    drivabilityScores = event.data.drivabilityScores;
     updateGuidelines(drivabilityScores); // Update guidelines with the processed scores
 };
 
