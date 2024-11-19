@@ -1,5 +1,6 @@
 /Data/rocksdataset/**
 /Data/sample_png_labels/**
+/Data/JordanRoboflow/**
 
 #Model/best.pt
 
