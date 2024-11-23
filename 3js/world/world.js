@@ -7,7 +7,6 @@
 //    - Right now potholes are just perfect cones
 //    - Surface normals only reflect a single light source I think
 //    - Positioning the light sources would be helpful probably
-// 3. Probably want a Player Camera mode
 // ---------------------------------------------------------------- //
 
 import * as THREE from 'three';
@@ -37,7 +36,7 @@ const height = 512; // Height of the heightmap
 const geometry = new THREE.PlaneGeometry(width, height, width - 1, height - 1);
 
 // Create a gray texture
-const texture = new THREE.TextureLoader().load('../textures/regolith2.jpg'); // Replace with your texture path
+const texture = new THREE.TextureLoader().load('../static/textures/regolith2.jpg'); // Replace with your texture path
 const material = new THREE.MeshStandardMaterial({ map: texture, wireframe: false });
 const plane = new THREE.Mesh(geometry, material);
 plane.receiveShadow = true; // Make sure the plane can receive shadows
@@ -334,6 +333,33 @@ function createWalls() {
     });
 
 }
+
+// =================================================================
+// OBJECTS
+// =================================================================
+
+
+// Person for YOLO Testing
+// // Load an image texture
+// const imageLoader = new THREE.TextureLoader();
+// const personTexture = imageLoader.load('../static/textures/girl.png', () => {
+//     console.log('Person image loaded.');
+// });
+
+// // Create a plane with the image texture
+// const personPlaneGeometry = new THREE.PlaneGeometry(100, 100); // Adjust size as needed
+// const personPlaneMaterial = new THREE.MeshStandardMaterial({
+//     map: personTexture,
+//     side: THREE.DoubleSide, // Ensure the texture is visible on both sides
+// });
+// const personPlane = new THREE.Mesh(personPlaneGeometry, personPlaneMaterial);
+// personPlane.position.set(0, 50, 0); // Adjust position as needed
+// scene.add(personPlane);
+
+// // Optional: Add lighting to better visualize the plane
+// const planeLight = new THREE.PointLight(0xffffff, 1, 500);
+// planeLight.position.set(50, 150, 50);
+// scene.add(planeLight);
 
 // // 2a. DROP SAMPLE BEACON CYAN
 // function dropColorBlockBeaconCyan() {
@@ -689,34 +715,233 @@ function updateGuidelines(drivabilityScores) {
 }
 
 // Main script
-const worker = new Worker('processCanvasWorker.js');
+const cvWorker = new Worker('/static/opencvWorker.js');
 
 // Handle message from the worker
-worker.onmessage = function (event) {
+cvWorker.onmessage = function (event) {
     drivabilityScores = event.data.drivabilityScores;
     updateGuidelines(drivabilityScores); // Update guidelines with the processed scores
 };
 
-function processCanvas() {
-    const gl = renderer.getContext();
-    const width = renderer.domElement.width;
-    const height = renderer.domElement.height;
-    const pixels = new Uint8Array(width * height * 4);
+// After WebGL initialization
+setupOverlay();
 
+// Function to process the WebGL canvas
+async function processCanvas() {
+    const canvas = renderer.domElement; // WebGL canvas
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Read pixel data for OpenCV
+    const gl = renderer.getContext();
+    const pixels = new Uint8Array(width * height * 4);
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-    // Send pixel data to worker
-    worker.postMessage({ pixels, width, height });
+    // Flip the pixel data vertically
+    flipPixelsVertically(pixels, width, height);
+
+    // Send pixel data to OpenCV and YOLO workers
+    cvWorker.postMessage({ type: 'process', pixels, width, height });
+    // Resize pixel data to 640x640 for YOLO using bilinear interpolation
+    const resizedPixels = resizePixelsBilinear(pixels, width, height, 640, 640);
+
+    // Send resized pixel data to the backend
+    try {
+        const response = await fetch("http://localhost:8000/predict/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                width: 640,
+                height: 640,
+                pixels: Array.from(resizedPixels),
+            }),
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            console.error("Backend Error:", data.error);
+        } else {
+            console.log("Predictions:", data.predictions);
+            const overlayCanvas = document.getElementById('yolo-overlay');
+            visualizePredictions(data.predictions, overlayCanvas.width, overlayCanvas.height, 640);
+        }
+    } catch (error) {
+        console.error("Error sending data to backend:", error);
+    }
 }
+
+
+// Function to flip the pixel data vertically
+// Correct difference with webgl origin coordinates
+function flipPixelsVertically(pixels, width, height) {
+    const bytesPerRow = width * 4; // 4 bytes per pixel (RGBA)
+    const tempRow = new Uint8Array(bytesPerRow);
+
+    for (let row = 0; row < height / 2; row++) {
+        const topRow = row * bytesPerRow;
+        const bottomRow = (height - row - 1) * bytesPerRow;
+
+        // Swap rows
+        tempRow.set(pixels.subarray(topRow, topRow + bytesPerRow));
+        pixels.set(pixels.subarray(bottomRow, bottomRow + bytesPerRow), topRow);
+        pixels.set(tempRow, bottomRow);
+    }
+}
+
+function resizePixelsBilinear(sourcePixels, sourceWidth, sourceHeight, targetWidth, targetHeight) {
+    const targetPixels = new Uint8Array(targetWidth * targetHeight * 4); // RGBA format
+
+    const xRatio = sourceWidth / targetWidth;
+    const yRatio = sourceHeight / targetHeight;
+
+    for (let y = 0; y < targetHeight; y++) {
+        for (let x = 0; x < targetWidth; x++) {
+            const targetIndex = (y * targetWidth + x) * 4;
+
+            // Calculate source coordinates
+            const srcX = x * xRatio;
+            const srcY = y * yRatio;
+
+            // Get the integer and fractional parts of the source coordinates
+            const x0 = Math.floor(srcX);
+            const x1 = Math.min(x0 + 1, sourceWidth - 1);
+            const y0 = Math.floor(srcY);
+            const y1 = Math.min(y0 + 1, sourceHeight - 1);
+
+            const dx = srcX - x0;
+            const dy = srcY - y0;
+
+            // Perform bilinear interpolation for each color channel (R, G, B, A)
+            for (let channel = 0; channel < 4; channel++) {
+                const c00 = sourcePixels[(y0 * sourceWidth + x0) * 4 + channel];
+                const c01 = sourcePixels[(y0 * sourceWidth + x1) * 4 + channel];
+                const c10 = sourcePixels[(y1 * sourceWidth + x0) * 4 + channel];
+                const c11 = sourcePixels[(y1 * sourceWidth + x1) * 4 + channel];
+
+                // Interpolate
+                const value =
+                    c00 * (1 - dx) * (1 - dy) +
+                    c01 * dx * (1 - dy) +
+                    c10 * (1 - dx) * dy +
+                    c11 * dx * dy;
+
+                targetPixels[targetIndex + channel] = value;
+            }
+        }
+    }
+
+    return targetPixels;
+}
+
+// Function to save ImageData to a file
+function saveImageData(imageData) {
+    // Create a temporary canvas
+    const tempCanvas = document.createElement('canvas');
+    const ctx = tempCanvas.getContext('2d');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
+
+    // Put ImageData onto the canvas
+    ctx.putImageData(imageData, 0, 0);
+
+    // Convert the canvas to a Blob and save it
+    tempCanvas.toBlob((blob) => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'webgl_image.png'; // File name
+        link.click();
+    }, 'image/png');
+}
+
+function initializeYoloOverlay() {
+    // Create YOLO overlay canvas dynamically
+    let overlayCanvas = document.getElementById('yolo-overlay');
+    if (!overlayCanvas) {
+        overlayCanvas = document.createElement('canvas');
+        overlayCanvas.id = 'yolo-overlay';
+        document.body.appendChild(overlayCanvas);
+    }
+
+    // Style the overlay canvas
+    overlayCanvas.style.position = 'absolute';
+    overlayCanvas.style.top = '0';
+    overlayCanvas.style.left = '0';
+    overlayCanvas.style.pointerEvents = 'none'; // Prevent user interaction
+    overlayCanvas.style.zIndex = '10'; // Ensure it overlays other elements
+}
+
+function adjustYoloOverlay() {
+    const overlayCanvas = document.getElementById('yolo-overlay');
+    const webglCanvas = renderer.domElement;
+
+    // Match size and position with the WebGL canvas
+    overlayCanvas.width = webglCanvas.width;
+    overlayCanvas.height = webglCanvas.height;
+
+    const rect = webglCanvas.getBoundingClientRect();
+    overlayCanvas.style.top = `${rect.top}px`;
+    overlayCanvas.style.left = `${rect.left}px`;
+}
+
+// Call this function once WebGL is initialized
+function setupOverlay() {
+    initializeYoloOverlay();
+    adjustYoloOverlay();
+
+    // Adjust the overlay dynamically on window resize
+    window.addEventListener('resize', adjustYoloOverlay);
+}
+
+// Visualize YOLO Predictions// Visualize YOLO Predictions
+function visualizePredictions(predictions, canvasWidth, canvasHeight, yoloInputSize = 640) {
+    const overlayCanvas = document.getElementById('yolo-overlay');
+    const ctx = overlayCanvas.getContext('2d');
+
+    // Clear previous drawings
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    predictions.forEach((pred) => {
+        const { box, score, class: classIndex } = pred;
+        const [x1, y1, x2, y2] = box; // Bounding box in YOLO input size
+
+        // Scale bounding box to the canvas size
+        const scaledX1 = (x1 / yoloInputSize) * canvasWidth;
+        const scaledY1 = (y1 / yoloInputSize) * canvasHeight;
+        const scaledX2 = (x2 / yoloInputSize) * canvasWidth;
+        const scaledY2 = (y2 / yoloInputSize) * canvasHeight;
+
+        const width = scaledX2 - scaledX1;
+        const height = scaledY2 - scaledY1;
+
+        // Draw bounding box
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(scaledX1, scaledY1, width, height);
+
+        // Add label
+        ctx.fillStyle = 'red';
+        ctx.font = '16px Arial';
+        ctx.fillText(
+            `Class: ${classIndex}, Score: ${score.toFixed(2)}`,
+            scaledX1,
+            scaledY1 - 5
+        );
+    });
+}
+
+// Adjust the YOLO overlay on window resize
+window.addEventListener('resize', adjustYoloOverlay);
+adjustYoloOverlay(); // Initial adjustment
+
 
 // Call processCanvas periodically or on demand
 setInterval(processCanvas, 1000); // Or integrate with your animate pipeline
 
-// Ensure OpenCV.js is ready before running
-function openCvReady() {
-    cv['onRuntimeInitialized'] = () => {
-        cv.FS_createPath("/", "working", true, true);
-        setInterval(processCanvas, 10); // Run processing every 500 ms
-    };
-}
-openCvReady();
+// // Ensure OpenCV.js is ready before running
+// function openCvReady() {
+//     cv['onRuntimeInitialized'] = () => {
+//         cv.FS_createPath("/", "working", true, true);
+//         setInterval(processCanvas, 10); // Run processing every 500 ms
+//     };
+// }
+// openCvReady();
