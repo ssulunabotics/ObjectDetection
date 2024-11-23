@@ -48,30 +48,105 @@ scene.add(plane);
 // const noiseCtx = noiseCanvas.getContext('2d');
 // SETUP AUTONOMOUS MODE
 // Floating button panel for autonomous controls
+// Add Font Awesome stylesheet for icons (add this to your HTML head or dynamically in JS)
+const fontAwesomeLink = document.createElement('link');
+fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+fontAwesomeLink.rel = 'stylesheet';
+document.head.appendChild(fontAwesomeLink);
+
+// Create the control panel container
 const controlPanel = document.createElement('div');
 controlPanel.id = 'control-panel';
 controlPanel.style.position = 'fixed';
-controlPanel.style.bottom = '20px';
+controlPanel.style.top = '20px';
 controlPanel.style.left = '20px';
 controlPanel.style.padding = '10px';
-controlPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-controlPanel.style.borderRadius = '5px';
+controlPanel.style.background = 'linear-gradient(135deg, rgba(0, 10, 30, 0.9), rgba(0, 60, 90, 0.9))';
+controlPanel.style.borderRadius = '10px';
+controlPanel.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.5)';
 controlPanel.style.zIndex = '1000';
+controlPanel.style.display = 'flex';
+controlPanel.style.gap = '10px';
 document.body.appendChild(controlPanel);
 
+// Utility function to create buttons with icons
+function createIconButton(iconClass, title, onClick) {
+    const button = document.createElement('button');
+    button.title = title; // Tooltip text
+    button.style.width = '20px';
+    button.style.height = '20px';
+    button.style.border = 'none';
+    button.style.borderRadius = '50%';
+    button.style.background = 'rgba(255, 255, 255, 0.1)';
+    button.style.color = 'white';
+    button.style.display = 'flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.cursor = 'pointer';
+    button.style.transition = 'background 0.3s';
+    button.onmouseover = () => (button.style.background = 'rgba(255, 255, 255, 0.2)');
+    button.onmouseout = () => (button.style.background = 'rgba(255, 255, 255, 0.1)');
+    button.onclick = onClick;
+
+    const icon = document.createElement('i');
+    icon.className = iconClass; // Font Awesome class for the icon
+    icon.style.fontSize = '20px';
+    button.appendChild(icon);
+
+    return button;
+}
+
 // Play button
-const playButton = document.createElement('button');
-playButton.innerText = 'Play';
-playButton.style.marginRight = '10px';
-playButton.onclick = togglePlay;
+const playButton = createIconButton('fas fa-play', 'Play', togglePlay);
 controlPanel.appendChild(playButton);
 
 // Step Forward button
-const stepButton = document.createElement('button');
-stepButton.innerText = 'Step Forward';
-stepButton.onclick = stepForward;
+const stepButton = createIconButton('fas fa-forward', 'Step Forward', stepForward);
 controlPanel.appendChild(stepButton);
 
+// Toggle Guidelines button
+const toggleGuidelinesButton = createIconButton('fas fa-person-walking', 'Toggle Guidelines', toggleGuidelines);
+controlPanel.appendChild(toggleGuidelinesButton);
+
+// Toggle YOLO Processing button
+const toggleYoloButton = createIconButton('fas fa-crosshairs', 'Toggle YOLO Processing', toggleYoloProcessing);
+controlPanel.appendChild(toggleYoloButton);
+
+// State variables for toggling features
+let showGuidelines = true;
+let yoloProcessingActive = true;
+
+// Function to toggle guidelines visibility
+function toggleGuidelines() {
+    const guidelinesOverlay = document.getElementById('guidelines-overlay');
+    // Toggle visibility
+    showGuidelines = !showGuidelines;
+    if (showGuidelines) {
+        guidelinesOverlay.style.display = 'block'; // Make visible
+        guidelinesOverlay.style.visibility = 'visible';
+        guidelinesOverlay.style.opacity = '1';
+    } else {
+        guidelinesOverlay.style.display = 'none'; // Hide
+        guidelinesOverlay.style.visibility = 'hidden';
+        guidelinesOverlay.style.opacity = '0';
+    }
+}
+
+// Function to toggle YOLO processing
+function toggleYoloProcessing() {
+    const yoloOverlay = document.getElementById('yolo-overlay');
+    // Toggle visibility
+    yoloProcessingActive = !yoloProcessingActive;
+    if (yoloProcessingActive) {
+        yoloOverlay.style.display = 'block'; // Make visible
+        yoloOverlay.style.visibility = 'visible';
+        yoloOverlay.style.opacity = '1';
+    } else {
+        yoloOverlay.style.display = 'none'; // Hide
+        yoloOverlay.style.visibility = 'hidden';
+        yoloOverlay.style.opacity = '0';
+    }
+}
 
 let drivabilityScores = [];
 
@@ -662,6 +737,7 @@ adjustGuidelinesOverlay(); // Initial call
 
 // Function to update drivability guidelines on overlay
 function updateGuidelines(drivabilityScores) {
+    if (!showGuidelines) return; // Skip updates if guidelines are hidden
     guidelinesOverlay.innerHTML = ''; // Clear previous guidelines
 
     const numSlices = drivabilityScores.length;
@@ -691,23 +767,23 @@ function updateGuidelines(drivabilityScores) {
 
         // Highlight the three adjacent regions with the highest scores
         if (i >= maxIndex && i < maxIndex + 5) {
-            region.style.backgroundColor = 'rgba(173, 216, 230, 0.2)'; // Light blue with low opacity
+            region.style.backgroundColor = 'rgba(173, 216, 230, 0.05)'; // Light blue with low opacity
         }
 
         // Create line for slice boundary
-        const line = document.createElement('div');
-        line.className = 'guideline-line';
-        line.style.left = `${(i + 1) * sliceWidth}px`;
-        line.style.height = `${overlayHeight}px`;
-        guidelinesOverlay.appendChild(line);
+        // const line = document.createElement('div');
+        // line.className = 'guideline-line';
+        // line.style.left = `${(i + 1) * sliceWidth}px`;
+        // line.style.height = `${overlayHeight}px`;
+        // guidelinesOverlay.appendChild(line);
 
-        // Create score label
-        const score = document.createElement('span');
-        score.className = 'guideline-score';
-        score.innerText = drivabilityScores[i].toFixed(2);
-        score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
-        score.style.top = `${overlayHeight / 3}px`;
-        guidelinesOverlay.appendChild(score);
+        // // Create score label
+        // const score = document.createElement('span');
+        // score.className = 'guideline-score';
+        // score.innerText = drivabilityScores[i].toFixed(2);
+        // score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
+        // score.style.top = `${overlayHeight / 3}px`;
+        // guidelinesOverlay.appendChild(score);
 
         // Append region div for background color
         guidelinesOverlay.appendChild(region);
@@ -726,48 +802,73 @@ cvWorker.onmessage = function (event) {
 // After WebGL initialization
 setupOverlay();
 
+// Establish WebSocket connection
+const websocket = new WebSocket("ws://localhost:8000/ws/predict");
+
+websocket.onopen = () => {
+    console.log("WebSocket connection established");
+};
+
+websocket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.error) {
+        console.error("Error from WebSocket:", data.error);
+    } else {
+        // Handle YOLO predictions
+        const overlayCanvas = document.getElementById('yolo-overlay');
+        visualizePredictions(data.predictions, overlayCanvas.width, overlayCanvas.height, 640);
+    }
+};
+
+websocket.onerror = (error) => {
+    console.error("WebSocket error:", error);
+};
+
+websocket.onclose = () => {
+    console.log("WebSocket connection closed");
+};
+
+
 // Function to process the WebGL canvas
 async function processCanvas() {
+    if(!showGuidelines && !yoloProcessingActive) return;
     const canvas = renderer.domElement; // WebGL canvas
     const width = canvas.width;
     const height = canvas.height;
 
-    // Read pixel data for OpenCV
     const gl = renderer.getContext();
     const pixels = new Uint8Array(width * height * 4);
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
     // Flip the pixel data vertically
     flipPixelsVertically(pixels, width, height);
 
+    if (showGuidelines) {
     // Send pixel data to OpenCV and YOLO workers
     cvWorker.postMessage({ type: 'process', pixels, width, height });
-    // Resize pixel data to 640x640 for YOLO using bilinear interpolation
-    const resizedPixels = resizePixelsBilinear(pixels, width, height, 640, 640);
-
-    // Send resized pixel data to the backend
-    try {
-        const response = await fetch("http://localhost:8000/predict/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                width: 640,
-                height: 640,
-                pixels: Array.from(resizedPixels),
-            }),
-        });
-
-        const data = await response.json();
-        if (data.error) {
-            console.error("Backend Error:", data.error);
-        } else {
-            console.log("Predictions:", data.predictions);
-            const overlayCanvas = document.getElementById('yolo-overlay');
-            visualizePredictions(data.predictions, overlayCanvas.width, overlayCanvas.height, 640);
-        }
-    } catch (error) {
-        console.error("Error sending data to backend:", error);
     }
+
+    console.log("YOLO Processing Active:", yoloProcessingActive);
+
+    
+    if (yoloProcessingActive) {
+        // Resize pixel data to 640x640 for YOLO using bilinear interpolation
+        const resizedPixels = resizePixelsBilinear(pixels, width, height, 640, 640);
+
+        // Prepare frame data
+        const frameData = {
+            width: 640,
+            height: 640,
+            pixels: Array.from(resizedPixels),
+        };
+
+        // Send the frame data to the WebSocket server
+        if (websocket.readyState === WebSocket.OPEN) {
+            websocket.send(JSON.stringify(frameData));
+        } else {
+            console.error("WebSocket is not open");
+        }
+    }
+
 }
 
 
@@ -913,14 +1014,17 @@ function visualizePredictions(predictions, canvasWidth, canvasHeight, yoloInputS
         const width = scaledX2 - scaledX1;
         const height = scaledY2 - scaledY1;
 
-        // Draw bounding box
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 2;
+        // Draw bounding box with a custom sci-fi blue
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)'; // Cyan-like glowing blue
+        ctx.lineWidth = 2; // Slightly thicker for more prominence
+        ctx.shadowColor = 'rgba(0, 255, 255, 0.5)'; // Glow effect
+        ctx.shadowBlur = 10; // Blur radius for the glow
         ctx.strokeRect(scaledX1, scaledY1, width, height);
 
-        // Add label
-        ctx.fillStyle = 'red';
-        ctx.font = '16px Arial';
+        // Add label with a custom sci-fi font and color
+        ctx.fillStyle = 'rgba(0, 200, 255, 1)'; // Vibrant sci-fi blue
+        ctx.font = 'bold 16px Orbitron, Arial'; // Orbitron is a sci-fi font (fallback to Arial if unavailable)
+        ctx.shadowBlur = 0; // Disable shadow for text to keep it crisp
         ctx.fillText(
             `Class: ${classIndex}, Score: ${score.toFixed(2)}`,
             scaledX1,
@@ -935,7 +1039,7 @@ adjustYoloOverlay(); // Initial adjustment
 
 
 // Call processCanvas periodically or on demand
-setInterval(processCanvas, 1000); // Or integrate with your animate pipeline
+setInterval(processCanvas, 350); // Or integrate with your animate pipeline
 
 // // Ensure OpenCV.js is ready before running
 // function openCvReady() {

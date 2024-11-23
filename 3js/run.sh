@@ -17,4 +17,4 @@ cd "$WORLD_DIR" || exit
 
 # Launch FastAPI with uvicorn
 echo "Launching FastAPI backend and serving world.html on http://localhost:8000"
-uvicorn pythonbackend:app --host 0.0.0.0 --port 8000
+uvicorn pythonbackend:app --workers 4 --host 0.0.0.0 --port 8000
