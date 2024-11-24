@@ -20,7 +20,7 @@ import { LoopSubdivision } from 'https://unpkg.com/three-subdivide/build/index.m
 Setup
 
 ================================================================*/
-
+let predictions = []; // Global variable to store YOLO predictions
 
 // Create the scene, camera, and renderer
 const scene = new THREE.Scene();
@@ -147,6 +147,105 @@ function toggleYoloProcessing() {
         yoloOverlay.style.opacity = '0';
     }
 }
+// ----------------------------------------------------------------
+// MINIMAP
+// ----------------------------------------------------------------
+// Create the minimap canvas
+const minimapCanvas = document.createElement('canvas');
+minimapCanvas.id = 'minimap-canvas';
+minimapCanvas.style.position = 'absolute';
+minimapCanvas.style.top = '20px';
+minimapCanvas.style.right = '20px';
+minimapCanvas.style.width = '200px'; // Display size
+minimapCanvas.style.height = '200px';
+// minimapCanvas.style.border = '2px solid white'; // Optional border for styling
+minimapCanvas.style.zIndex = '1000'; // Ensure it's above the main canvas
+document.body.appendChild(minimapCanvas);
+
+// Set up the minimap context
+const minimapCtx = minimapCanvas.getContext('2d');
+minimapCanvas.width = 512; // Internal resolution for sharp rendering
+minimapCanvas.height = 512;
+
+// Render gridlines on the minimap
+function renderGridlines() {
+    const gridSize = 32; // Size of each grid cell in world coordinates
+    const minimapGridSize = minimapCanvas.width / (width / gridSize); // Scaled grid size for minimap
+
+    minimapCtx.strokeStyle = 'rgba(200, 200, 200, 0.5)'; // Light gray gridlines
+    minimapCtx.lineWidth = 1;
+
+    // Draw vertical gridlines
+    for (let x = 0; x <= minimapCanvas.width; x += minimapGridSize) {
+        minimapCtx.beginPath();
+        minimapCtx.moveTo(x, 0);
+        minimapCtx.lineTo(x, minimapCanvas.height);
+        minimapCtx.stroke();
+    }
+
+    // Draw horizontal gridlines
+    for (let y = 0; y <= minimapCanvas.height; y += minimapGridSize) {
+        minimapCtx.beginPath();
+        minimapCtx.moveTo(0, y);
+        minimapCtx.lineTo(minimapCanvas.width, y);
+        minimapCtx.stroke();
+    }
+}
+function renderCameraMarker() {
+    // Map camera position from world space to minimap space
+    const camX = ((camera.position.x + width / 2) / width) * minimapCanvas.width;
+    const camY = ((camera.position.z + height / 2) / height) * minimapCanvas.height; // No need to invert the Z-axis
+
+    // Get and normalize camera direction
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0; // Flatten direction to XZ plane
+    forward.normalize();
+
+    // Size of the direction indicator
+    const markerSize = 15;
+
+    // Calculate the triangle points
+    const tipX = camX + forward.x * markerSize;
+    const tipY = camY + forward.z * markerSize; // Correct orientation
+
+    // Calculate base points perpendicular to direction
+    const baseWidth = markerSize * 0.5;
+    const leftX = camX - forward.z * baseWidth;
+    const leftY = camY + forward.x * baseWidth; // Adjusted for flipped Y-axis
+    const rightX = camX + forward.z * baseWidth;
+    const rightY = camY - forward.x * baseWidth; // Adjusted for flipped Y-axis
+
+    // Draw the marker
+    minimapCtx.save();
+    minimapCtx.fillStyle = 'blue';
+    minimapCtx.strokeStyle = 'blue';
+    minimapCtx.lineWidth = 1;
+
+    // Draw filled triangle
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(tipX, tipY);
+    minimapCtx.lineTo(leftX, leftY);
+    minimapCtx.lineTo(rightX, rightY);
+    minimapCtx.closePath();
+    minimapCtx.fill();
+    minimapCtx.stroke();
+
+    minimapCtx.restore();
+}
+
+// Update the minimap in the animation loop
+function updateMinimap() {
+    minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height); // Clear the minimap
+    renderGridlines(); // Draw gridlines
+    renderCameraMarker(); // Draw the camera marker and view direction
+
+    // Use global predictions to visualize obstacles on the minimap
+    predictions.forEach((pred) => {
+        plotObstacleOnMinimap(pred, camera, canvas.width, canvas.height, 640);
+    });
+}
+
 
 let drivabilityScores = [];
 
@@ -711,6 +810,7 @@ function animate() {
     updateCamera(); // Call the camera update function
     updateAutonomousMode(); // Autonomous camera updates
     renderer.render(scene, camera);
+    updateMinimap(); // Minimap render
 }
 
 animate();
@@ -814,9 +914,13 @@ websocket.onmessage = (event) => {
     if (data.error) {
         console.error("Error from WebSocket:", data.error);
     } else {
-        // Handle YOLO predictions
+        // Update the global predictions variable
+        predictions = data.predictions;
+
+        // Update YOLO visualization and minimap
         const overlayCanvas = document.getElementById('yolo-overlay');
-        visualizePredictions(data.predictions, overlayCanvas.width, overlayCanvas.height, 640);
+        visualizePredictions(overlayCanvas.width, overlayCanvas.height, 640);
+        updateMinimap(); // Update minimap with the latest predictions
     }
 };
 
@@ -992,9 +1096,50 @@ function setupOverlay() {
     // Adjust the overlay dynamically on window resize
     window.addEventListener('resize', adjustYoloOverlay);
 }
+function plotObstacleOnMinimap(prediction, camera, canvasWidth, canvasHeight, yoloInputSize = 640) {
+    // Get bounding box center in YOLO input coordinates
+    const [x1, y1, x2, y2] = prediction.box;
+    const objectCenterX = (x1 + x2) / 2;
+    const objectCenterY = (y1 + y2) / 2;
+
+    // Scale to canvas size
+    const scaledX = (objectCenterX / yoloInputSize) * canvasWidth;
+    const scaledY = (objectCenterY / yoloInputSize) * canvasHeight;
+
+    // Convert to NDC (Normalized Device Coordinates)
+    const ndcX = (scaledX / canvasWidth) * 2 - 1;
+    const ndcY = -(scaledY / canvasHeight) * 2 + 1;
+
+    // Create ray from camera through the point
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+    // Define ground plane
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Y = 0
+
+    // Find intersection with the ground plane
+    const intersectionPoint = new THREE.Vector3();
+    raycaster.ray.intersectPlane(groundPlane, intersectionPoint);
+
+    // If no intersection is found, return
+    if (!intersectionPoint) {
+        console.warn('No intersection found with ground plane');
+        return;
+    }
+
+    // Convert world position to minimap coordinates
+    const minimapX = ((intersectionPoint.x + width / 2) / width) * minimapCanvas.width;
+    const minimapY = ((intersectionPoint.z + height / 2) / height) * minimapCanvas.height;
+    
+    // Draw on minimap
+    minimapCtx.save();
+    minimapCtx.fillStyle = 'red'; // Obstacle color
+    minimapCtx.fillRect(minimapX, minimapY, 20,20); // Draw a small circle
+    minimapCtx.restore();
+}
 
 // Visualize YOLO Predictions// Visualize YOLO Predictions
-function visualizePredictions(predictions, canvasWidth, canvasHeight, yoloInputSize = 640) {
+function visualizePredictions(canvasWidth, canvasHeight, yoloInputSize = 640) {
     const overlayCanvas = document.getElementById('yolo-overlay');
     const ctx = overlayCanvas.getContext('2d');
 
