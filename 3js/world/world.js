@@ -13,14 +13,13 @@ import * as THREE from 'three';
 
 import { LoopSubdivision } from 'https://unpkg.com/three-subdivide/build/index.module.js';
 
-// import SubdivisionModifier from 'three/addons/modifiers/SubdivisionModifier.js'; // Import if available
-
 /*================================================================
 
 Setup
 
 ================================================================*/
 let predictions = []; // Global variable to store YOLO predictions
+let drivabilityScores = [];
 
 // Create the scene, camera, and renderer
 const scene = new THREE.Scene();
@@ -35,7 +34,7 @@ const width = 512; // Width of the heightmap
 const height = 512; // Height of the heightmap
 const geometry = new THREE.PlaneGeometry(width, height, width - 1, height - 1);
 
-// Create a gray texture
+// Create a gray texture for the Environment base
 const texture = new THREE.TextureLoader().load('../static/textures/regolith2.jpg'); // Replace with your texture path
 const material = new THREE.MeshStandardMaterial({ map: texture, wireframe: false });
 const plane = new THREE.Mesh(geometry, material);
@@ -47,71 +46,204 @@ scene.add(plane);
 // const noiseCanvas = document.getElementById('noiseCanvas');
 // const noiseCtx = noiseCanvas.getContext('2d');
 // SETUP AUTONOMOUS MODE
-// Floating button panel for autonomous controls
-// Add Font Awesome stylesheet for icons (add this to your HTML head or dynamically in JS)
-const fontAwesomeLink = document.createElement('link');
-fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
-fontAwesomeLink.rel = 'stylesheet';
-document.head.appendChild(fontAwesomeLink);
 
-// Create the control panel container
-const controlPanel = document.createElement('div');
-controlPanel.id = 'control-panel';
-controlPanel.style.position = 'fixed';
-controlPanel.style.top = '20px';
-controlPanel.style.left = '20px';
-controlPanel.style.padding = '10px';
-controlPanel.style.background = 'linear-gradient(135deg, rgba(0, 10, 30, 0.9), rgba(0, 60, 90, 0.9))';
-controlPanel.style.borderRadius = '10px';
-controlPanel.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.5)';
-controlPanel.style.zIndex = '1000';
-controlPanel.style.display = 'flex';
-controlPanel.style.gap = '10px';
-document.body.appendChild(controlPanel);
+/*================================================================
 
-// Utility function to create buttons with icons
-function createIconButton(iconClass, title, onClick) {
-    const button = document.createElement('button');
-    button.title = title; // Tooltip text
-    button.style.width = '20px';
-    button.style.height = '20px';
-    button.style.border = 'none';
-    button.style.borderRadius = '50%';
-    button.style.background = 'rgba(255, 255, 255, 0.1)';
-    button.style.color = 'white';
-    button.style.display = 'flex';
-    button.style.alignItems = 'center';
-    button.style.justifyContent = 'center';
-    button.style.cursor = 'pointer';
-    button.style.transition = 'background 0.3s';
-    button.onmouseover = () => (button.style.background = 'rgba(255, 255, 255, 0.2)');
-    button.onmouseout = () => (button.style.background = 'rgba(255, 255, 255, 0.1)');
-    button.onclick = onClick;
+Control Panel
 
-    const icon = document.createElement('i');
-    icon.className = iconClass; // Font Awesome class for the icon
-    icon.style.fontSize = '20px';
-    button.appendChild(icon);
+// ================================================================*/
+// // Floating button panel for autonomous controls
+// // Add Font Awesome stylesheet for icons (add this to your HTML head or dynamically in JS)
+// const fontAwesomeLink = document.createElement('link');
+// fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+// fontAwesomeLink.rel = 'stylesheet';
+// document.head.appendChild(fontAwesomeLink);
 
-    return button;
+// // Create the control panel container
+// const controlPanel = document.createElement('div');
+// controlPanel.id = 'control-panel';
+// controlPanel.style.position = 'fixed';
+// controlPanel.style.top = '20px';
+// controlPanel.style.left = '20px';
+// controlPanel.style.padding = '10px';
+// controlPanel.style.background = 'linear-gradient(135deg, rgba(0, 10, 30, 0.9), rgba(0, 60, 90, 0.9))';
+// controlPanel.style.borderRadius = '10px';
+// controlPanel.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.5)';
+// controlPanel.style.zIndex = '1000';
+// controlPanel.style.display = 'flex';
+// controlPanel.style.gap = '10px';
+// document.body.appendChild(controlPanel);
+
+// // Utility function to create buttons with icons
+// function createIconButton(iconClass, title, onClick) {
+//     const button = document.createElement('button');
+//     button.title = title; // Tooltip text
+//     button.style.width = '20px';
+//     button.style.height = '20px';
+//     button.style.border = 'none';
+//     button.style.borderRadius = '50%';
+//     button.style.background = 'rgba(255, 255, 255, 0.1)';
+//     button.style.color = 'white';
+//     button.style.display = 'flex';
+//     button.style.alignItems = 'center';
+//     button.style.justifyContent = 'center';
+//     button.style.cursor = 'pointer';
+//     button.style.transition = 'background 0.3s';
+//     button.onmouseover = () => (button.style.background = 'rgba(255, 255, 255, 0.2)');
+//     button.onmouseout = () => (button.style.background = 'rgba(255, 255, 255, 0.1)');
+//     button.onclick = onClick;
+
+//     const icon = document.createElement('i');
+//     icon.className = iconClass; // Font Awesome class for the icon
+//     icon.style.fontSize = '20px';
+//     button.appendChild(icon);
+
+//     return button;
+// }
+
+// // Play button
+// const playButton = createIconButton('fas fa-play', 'Play', togglePlay);
+// controlPanel.appendChild(playButton);
+
+// // Step Forward button
+// const stepButton = createIconButton('fas fa-forward', 'Step Forward', stepForward);
+// controlPanel.appendChild(stepButton);
+
+// // Toggle Guidelines button
+// const toggleGuidelinesButton = createIconButton('fas fa-person-walking', 'Toggle Guidelines', toggleGuidelines);
+// controlPanel.appendChild(toggleGuidelinesButton);
+
+// // Toggle YOLO Processing button
+// const toggleYoloButton = createIconButton('fas fa-crosshairs', 'Toggle YOLO Processing', toggleYoloProcessing);
+// controlPanel.appendChild(toggleYoloButton);
+
+/*================================================================
+
+Stats Panel
+
+================================================================*/
+// Create the stats panel container
+const statsPanel = document.createElement('div');
+statsPanel.id = 'stats-panel';
+statsPanel.style.position = 'fixed';
+statsPanel.style.top = '20px';
+statsPanel.style.left = '20px';
+statsPanel.style.padding = '10px';
+statsPanel.style.background = 'linear-gradient(135deg, rgba(0, 10, 30, 0.9), rgba(0, 60, 90, 0.9))';
+statsPanel.style.borderRadius = '10px';
+statsPanel.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.5)';
+statsPanel.style.zIndex = '1000';
+statsPanel.style.color = 'white';
+statsPanel.style.fontFamily = 'Arial, sans-serif';
+statsPanel.style.fontSize = '14px';
+statsPanel.style.lineHeight = '1.5';
+document.body.appendChild(statsPanel);
+
+// Utility function to update stats
+function updateStats(distanceToGoal, inferenceSpeed) {
+    statsPanel.innerHTML = `
+        <div><strong>Distance to Goal:</strong> ${distanceToGoal.toFixed(2)} m</div>
+        <div><strong>Inference Speed:</strong> ${inferenceSpeed.toFixed(2)} ms</div>
+    `;
 }
 
-// Play button
-const playButton = createIconButton('fas fa-play', 'Play', togglePlay);
-controlPanel.appendChild(playButton);
+// Calculate the distance to the goal
+function calculateDistanceToGoal(camera, goalMarker) {
+    if (!goalMarker) return 0;
+    const cameraPosition = new THREE.Vector3();
+    camera.getWorldPosition(cameraPosition);
+    return (cameraPosition.distanceTo(goalMarker.position) / 40) - 1;
+}
 
-// Step Forward button
-const stepButton = createIconButton('fas fa-forward', 'Step Forward', stepForward);
-controlPanel.appendChild(stepButton);
+// Measure inference speed
+let inferenceStartTime = 0;
+let inferenceSpeed = 0;
 
-// Toggle Guidelines button
-const toggleGuidelinesButton = createIconButton('fas fa-person-walking', 'Toggle Guidelines', toggleGuidelines);
-controlPanel.appendChild(toggleGuidelinesButton);
+function startInferenceTimer() {
+    inferenceStartTime = performance.now();
+}
 
-// Toggle YOLO Processing button
-const toggleYoloButton = createIconButton('fas fa-crosshairs', 'Toggle YOLO Processing', toggleYoloProcessing);
-controlPanel.appendChild(toggleYoloButton);
+function stopInferenceTimer() {
+    const inferenceEndTime = performance.now();
+    inferenceSpeed = inferenceEndTime - inferenceStartTime;
+}
 
+// Update stats periodically
+setInterval(() => {
+    const distanceToGoal = calculateDistanceToGoal(camera, goalMarker);
+    updateStats(distanceToGoal, inferenceSpeed);
+}, 500); // Update every 500ms
+
+// ----------------------------------------------------------------
+// GOAL MARKER
+// ----------------------------------------------------------------
+
+// Variables for the goal marker
+let goalMarker = null;
+
+
+// Function to create a diamond-shaped marker
+function createDiamondMarker() {
+    const diamondGeometry = new THREE.ConeGeometry(5, 10, 4); // Cone geometry with 4 sides
+    const diamondMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 }); // Bright green
+    const diamond = new THREE.Mesh(diamondGeometry, diamondMaterial);
+
+    // Flip the cone upside down to resemble a diamond
+    diamond.rotation.x = Math.PI;
+
+    return diamond;
+}
+
+// Function to place the goal at a specific position
+function placeGoalAt(x, z) {
+    console.log('Placing goal...');
+
+    // If a goal marker already exists, remove it
+    if (goalMarker) {
+        scene.remove(goalMarker);
+    }
+
+    // Create a new diamond-shaped goal marker
+    goalMarker = createDiamondMarker();
+
+    // Calculate the height at the goal position
+    const heightX = Math.floor((x + width / 2) / width * geometry.parameters.widthSegments);
+    const heightZ = Math.floor((z + height / 2) / height * geometry.parameters.heightSegments);
+    const heightIndex = heightX * width + heightZ;
+    const terrainHeight = lastHeightmapData ? lastHeightmapData[heightIndex] : 0;
+
+    // Position the goal marker
+    goalMarker.position.set(x, terrainHeight + 5, z); // Slightly above the terrain
+    goalMarker.castShadow = true;
+
+    // Add the goal marker to the scene
+    scene.add(goalMarker);
+
+    console.log(`Goal placed at X: ${x}, Z: ${z}`);
+}
+
+// Event listener to handle mouse clicks for placing the goal
+function onSceneClick(event) {
+    // Calculate mouse position in normalized device coordinates (-1 to +1)
+    const mouse = new THREE.Vector2();
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    // Use raycaster to determine intersection with the terrain
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+
+    // Check for intersections with the plane
+    const intersects = raycaster.intersectObject(plane);
+
+    if (intersects.length > 0) {
+        const { x, z } = intersects[0].point; // Get the intersection point
+        placeGoalAt(x, z); // Place the goal at the clicked position
+    }
+}
+
+// Add event listener for mouse clicks
+window.addEventListener('click', onSceneClick);
 // State variables for toggling features
 let showGuidelines = true;
 let yoloProcessingActive = true;
@@ -234,20 +366,36 @@ function renderCameraMarker() {
     minimapCtx.restore();
 }
 
+
+// Function to render the goal marker on the minimap
+function renderGoalOnMinimap() {
+    if (!goalMarker) return; // Skip if no goal marker exists
+
+    // Map goal position from world space to minimap space
+    const goalX = ((goalMarker.position.x + width / 2) / width) * minimapCanvas.width;
+    const goalY = ((goalMarker.position.z + height / 2) / height) * minimapCanvas.height;
+
+    // Draw goal marker on the minimap
+    minimapCtx.save();
+    minimapCtx.fillStyle = 'green'; // Bright green for the goal marker
+    minimapCtx.beginPath();
+    minimapCtx.arc(goalX, goalY, 5, 0, 2 * Math.PI); // Small circle
+    minimapCtx.fill();
+    minimapCtx.restore();
+}
+
 // Update the minimap in the animation loop
 function updateMinimap() {
     minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height); // Clear the minimap
     renderGridlines(); // Draw gridlines
     renderCameraMarker(); // Draw the camera marker and view direction
+    renderGoalOnMinimap();
 
     // Use global predictions to visualize obstacles on the minimap
     predictions.forEach((pred) => {
         plotObstacleOnMinimap(pred, camera, canvas.width, canvas.height, 640);
     });
 }
-
-
-let drivabilityScores = [];
 
 /*================================================================
 
@@ -835,23 +983,142 @@ function adjustGuidelinesOverlay() {
 window.addEventListener('resize', adjustGuidelinesOverlay);
 adjustGuidelinesOverlay(); // Initial call
 
-// Function to update drivability guidelines on overlay
-function updateGuidelines(drivabilityScores) {
+// // Function to update drivability guidelines on overlay
+// function updateGuidelines(drivabilityScores) {
+//     if (!showGuidelines) return; // Skip updates if guidelines are hidden
+//     guidelinesOverlay.innerHTML = ''; // Clear previous guidelines
+
+//     const numSlices = drivabilityScores.length;
+//     const sliceWidth = canvas.width / numSlices; // Use canvas width, not window
+//     const overlayHeight = canvas.height; // Use canvas height, not window
+
+//     // Find the three adjacent regions with the highest combined score
+//     let maxSum = -Infinity;
+//     let maxIndex = 0;
+//     for (let i = 0; i < numSlices - 2; i++) {
+//         const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2] + drivabilityScores[i + 3] + drivabilityScores[i + 4];
+//         if (sum > maxSum) {
+//             maxSum = sum;
+//             maxIndex = i;
+//         }
+//     }
+
+//     for (let i = 0; i < numSlices; i++) {
+//         // Create a div to represent each guideline region
+//         const region = document.createElement('div');
+//         region.className = 'guideline-region';
+//         region.style.width = `${sliceWidth}px`;
+//         region.style.height = `${overlayHeight}px`;
+//         region.style.left = `${i * sliceWidth}px`;
+//         region.style.position = 'absolute';
+//         region.style.top = '0';
+
+//         // Highlight the three adjacent regions with the highest scores
+//         if (i >= maxIndex && i < maxIndex + 5) {
+//             region.style.backgroundColor = 'rgba(173, 216, 230, 0.05)'; // Light blue with low opacity
+//         }
+
+//         // Create line for slice boundary
+//         // const line = document.createElement('div');
+//         // line.className = 'guideline-line';
+//         // line.style.left = `${(i + 1) * sliceWidth}px`;
+//         // line.style.height = `${overlayHeight}px`;
+//         // guidelinesOverlay.appendChild(line);
+
+//         // // Create score label
+//         // const score = document.createElement('span');
+//         // score.className = 'guideline-score';
+//         // score.innerText = drivabilityScores[i].toFixed(2);
+//         // score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
+//         // score.style.top = `${overlayHeight / 3}px`;
+//         // guidelinesOverlay.appendChild(score);
+
+//         // Append region div for background color
+//         guidelinesOverlay.appendChild(region);
+//     }
+// }
+function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
     if (!showGuidelines) return; // Skip updates if guidelines are hidden
     guidelinesOverlay.innerHTML = ''; // Clear previous guidelines
 
     const numSlices = drivabilityScores.length;
-    const sliceWidth = canvas.width / numSlices; // Use canvas width, not window
-    const overlayHeight = canvas.height; // Use canvas height, not window
+    const sliceWidth = canvas.width / numSlices; // Width of each slice on the canvas
+    const overlayHeight = canvas.height; // Full height of the overlay
+    const sliceWidthWorld = width / numSlices; // Slice width in world coordinates
 
-    // Find the three adjacent regions with the highest combined score
-    let maxSum = -Infinity;
-    let maxIndex = 0;
-    for (let i = 0; i < numSlices - 2; i++) {
+    // Convert obstacles to screen space
+    const screenSpaceObstacles = obstacles.map((obstacle) => {
+        const screenPos = new THREE.Vector3(obstacle.position.x, obstacle.position.y, obstacle.position.z).project(camera);
+        return {
+            x: ((screenPos.x + 1) / 2) * canvas.width,
+            y: ((-screenPos.y + 1) / 2) * canvas.height,
+            z: screenPos.z, // Keep the projected Z-coordinate for depth comparison
+        };
+    });
+
+    // Update drivability scores with obstacles in screen space
+    screenSpaceObstacles.forEach((obstacle) => {
+        const sliceIndex = Math.floor(obstacle.x / sliceWidth);
+        if (sliceIndex >= 0 && sliceIndex < numSlices) {
+            // Calculate the penalty weight based on proximity to the camera
+            const proximityWeight = Math.max(0, 1 - obstacle.y / canvas.height); // Closer obstacles have higher weights
+            const penalty = 1.0 * proximityWeight; // Scale penalty by weight
+
+            // Apply penalty to the slice containing the obstacle
+            drivabilityScores[sliceIndex] -= penalty;
+
+            // Optionally penalize adjacent slices with reduced penalty
+            const adjacentPenalty = 0.1 * proximityWeight;
+            if (sliceIndex - 1 >= 0) drivabilityScores[sliceIndex - 1] -= adjacentPenalty;
+            if (sliceIndex + 1 < numSlices) drivabilityScores[sliceIndex + 1] -= adjacentPenalty;
+        }
+    });
+
+    // Convert goal position to screen space
+    let goalScreenPos = null;
+    if (goalPosition) {
+        goalScreenPos = new THREE.Vector3(goalPosition.x, goalPosition.y, goalPosition.z).project(camera);
+        goalScreenPos = {
+            x: ((goalScreenPos.x + 1) / 2) * canvas.width,
+            y: ((-goalScreenPos.y + 1) / 2) * canvas.height,
+        };
+    }
+
+    // Boost scores based on proximity to the goal in screen space
+    if (goalScreenPos) {
+        let closestSliceIndex = -1;
+        let closestDistance = Infinity;
+
+        for (let i = 0; i < numSlices; i++) {
+            const sliceCenterX = (i + 0.5) * sliceWidth; // Center of the slice in screen space
+            const distanceToGoal = Math.abs(sliceCenterX - goalScreenPos.x); // Only consider horizontal distance
+
+            // Apply a stronger boost for closer slices
+            const weight = 0.3; // Adjust weight to emphasize goal proximity
+            drivabilityScores[i] += Math.max(1 - distanceToGoal / canvas.width, 0) * weight;
+
+            // Track the closest slice to the goal
+            if (distanceToGoal < closestDistance) {
+                closestDistance = distanceToGoal;
+                closestSliceIndex = i;
+            }
+        }
+
+        // Add a flat gain to the closest slice
+        if (closestSliceIndex >= 0) {
+            const flatGain = 0.2; // Adjust this value to control the flat gain
+            drivabilityScores[closestSliceIndex] += flatGain;
+        }
+    }
+
+    // Find the best 5-slice region index based on updated drivability scores
+    let bestIndex = 0;
+    let bestScore = -Infinity;
+    for (let i = 0; i < numSlices - 4; i++) { // Loop until numSlices - 4 for 5 slices
         const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2] + drivabilityScores[i + 3] + drivabilityScores[i + 4];
-        if (sum > maxSum) {
-            maxSum = sum;
-            maxIndex = i;
+        if (sum > bestScore) {
+            bestScore = sum;
+            bestIndex = i; // Start index of the best region
         }
     }
 
@@ -865,27 +1132,11 @@ function updateGuidelines(drivabilityScores) {
         region.style.position = 'absolute';
         region.style.top = '0';
 
-        // Highlight the three adjacent regions with the highest scores
-        if (i >= maxIndex && i < maxIndex + 5) {
-            region.style.backgroundColor = 'rgba(173, 216, 230, 0.05)'; // Light blue with low opacity
+        // Highlight the best path (5 slices)
+        if (i >= bestIndex && i < bestIndex + 5) {
+            region.style.backgroundColor = 'rgba(0, 255, 255, 0.1)'; // Cyan for best path
         }
 
-        // Create line for slice boundary
-        // const line = document.createElement('div');
-        // line.className = 'guideline-line';
-        // line.style.left = `${(i + 1) * sliceWidth}px`;
-        // line.style.height = `${overlayHeight}px`;
-        // guidelinesOverlay.appendChild(line);
-
-        // // Create score label
-        // const score = document.createElement('span');
-        // score.className = 'guideline-score';
-        // score.innerText = drivabilityScores[i].toFixed(2);
-        // score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
-        // score.style.top = `${overlayHeight / 3}px`;
-        // guidelinesOverlay.appendChild(score);
-
-        // Append region div for background color
         guidelinesOverlay.appendChild(region);
     }
 }
@@ -896,7 +1147,17 @@ const cvWorker = new Worker('/static/opencvWorker.js');
 // Handle message from the worker
 cvWorker.onmessage = function (event) {
     drivabilityScores = event.data.drivabilityScores;
-    updateGuidelines(drivabilityScores); // Update guidelines with the processed scores
+
+    // Convert YOLO predictions to 3D world positions
+    const obstacles = predictions.map(pred => ({
+        position: getObstacleWorldPosition(pred, camera, canvas.width, canvas.height)
+    })).filter(obstacle => obstacle.position);
+
+    // Get goal position
+    const goalPosition = goalMarker ? goalMarker.position : null;
+
+    // Update guidelines with the processed scores
+    updateGuidelines(drivabilityScores, obstacles, goalPosition)
 };
 
 // After WebGL initialization
@@ -916,6 +1177,7 @@ websocket.onmessage = (event) => {
     } else {
         // Update the global predictions variable
         predictions = data.predictions;
+        stopInferenceTimer();
 
         // Update YOLO visualization and minimap
         const overlayCanvas = document.getElementById('yolo-overlay');
@@ -932,10 +1194,84 @@ websocket.onclose = () => {
     console.log("WebSocket connection closed");
 };
 
+function maskGoalFromPixels(pixels, width, height) {
+    // Get goal position in screen space
+    const goalScreenPos = new THREE.Vector3(
+        goalMarker.position.x,
+        goalMarker.position.y,
+        goalMarker.position.z
+    ).project(camera);
+
+    const goalX = Math.floor(((goalScreenPos.x + 1) / 2) * width);
+    const goalY = Math.floor(((-goalScreenPos.y + 1) / 2) * height);
+
+    const maskRadius = 50; // Radius of the goal marker in pixels
+
+    for (let y = -maskRadius; y <= maskRadius; y++) {
+        for (let x = -maskRadius; x <= maskRadius; x++) {
+            const pixelX = goalX + x;
+            const pixelY = goalY + y;
+
+            // Ensure the pixel is within bounds and within the mask radius
+            if (
+                pixelX >= 0 &&
+                pixelX < width &&
+                pixelY >= 0 &&
+                pixelY < height &&
+                Math.sqrt(x * x + y * y) <= maskRadius
+            ) {
+                const index = (pixelY * width + pixelX) * 4; // Current pixel index (RGBA)
+
+                // Calculate the pixel below in the Y direction
+                const belowY = Math.min(pixelY + maskRadius, height - 1); // Ensure it stays within bounds
+                const belowIndex = (belowY * width + pixelX) * 4; // Index of the pixel below
+
+                // Copy the RGBA values from the pixel below
+                pixels[index] = pixels[belowIndex]; // R
+                pixels[index + 1] = pixels[belowIndex + 1]; // G
+                pixels[index + 2] = pixels[belowIndex + 2]; // B
+                pixels[index + 3] = pixels[belowIndex + 3]; // A
+            }
+        }
+    }
+}
+
+// Variables to track the camera's last known state
+let lastCameraPosition = new THREE.Vector3();
+let lastCameraQuaternion = new THREE.Quaternion();
+let cameraMoved = false;
+
+// Function to check if the camera has moved
+function hasCameraMoved() {
+    const currentPosition = new THREE.Vector3();
+    const currentQuaternion = new THREE.Quaternion();
+
+    camera.getWorldPosition(currentPosition); // Get current position
+    camera.getWorldQuaternion(currentQuaternion); // Get current orientation
+
+    // Check if position or orientation has changed
+    cameraMoved =
+        !currentPosition.equals(lastCameraPosition) ||
+        !currentQuaternion.equals(lastCameraQuaternion);
+
+    // Update the last known position and orientation
+    lastCameraPosition.copy(currentPosition);
+    lastCameraQuaternion.copy(currentQuaternion);
+
+    return cameraMoved;
+}
 
 // Function to process the WebGL canvas
 async function processCanvas() {
     if(!showGuidelines && !yoloProcessingActive) return;
+
+    // Check if the camera has moved
+    if (!hasCameraMoved()) {
+        console.log("Camera has not moved. Skipping YOLO processing.");
+        return; // Skip processing if the camera hasn't moved
+    }
+    startInferenceTimer();
+
     const canvas = renderer.domElement; // WebGL canvas
     const width = canvas.width;
     const height = canvas.height;
@@ -945,6 +1281,12 @@ async function processCanvas() {
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     // Flip the pixel data vertically
     flipPixelsVertically(pixels, width, height);
+
+    // Mask out the goal if it exists
+    if (goalMarker) {
+        maskGoalFromPixels(pixels, width, height);
+    }
+
 
     if (showGuidelines) {
     // Send pixel data to OpenCV and YOLO workers
@@ -972,7 +1314,6 @@ async function processCanvas() {
             console.error("WebSocket is not open");
         }
     }
-
 }
 
 
@@ -1137,6 +1478,29 @@ function plotObstacleOnMinimap(prediction, camera, canvasWidth, canvasHeight, yo
     minimapCtx.fillRect(minimapX, minimapY, 20,20); // Draw a small circle
     minimapCtx.restore();
 }
+// Function to convert YOLO bounding box to 3D world position
+function getObstacleWorldPosition(prediction, camera, canvasWidth, canvasHeight, yoloInputSize = 640) {
+    const [x1, y1, x2, y2] = prediction.box;
+    const objectCenterX = (x1 + x2) / 2;
+    const objectCenterY = (y1 + y2) / 2;
+
+    const scaledX = (objectCenterX / yoloInputSize) * canvasWidth;
+    const scaledY = (objectCenterY / yoloInputSize) * canvasHeight;
+
+    const ndcX = (scaledX / canvasWidth) * 2 - 1;
+    const ndcY = -(scaledY / canvasHeight) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Y = 0
+    const intersectionPoint = new THREE.Vector3();
+
+    if (raycaster.ray.intersectPlane(groundPlane, intersectionPoint)) {
+        return intersectionPoint;
+    }
+    return null;
+}
 
 // Visualize YOLO Predictions// Visualize YOLO Predictions
 function visualizePredictions(canvasWidth, canvasHeight, yoloInputSize = 640) {
@@ -1182,15 +1546,5 @@ function visualizePredictions(canvasWidth, canvasHeight, yoloInputSize = 640) {
 window.addEventListener('resize', adjustYoloOverlay);
 adjustYoloOverlay(); // Initial adjustment
 
-
-// Call processCanvas periodically or on demand
-setInterval(processCanvas, 350); // Or integrate with your animate pipeline
-
-// // Ensure OpenCV.js is ready before running
-// function openCvReady() {
-//     cv['onRuntimeInitialized'] = () => {
-//         cv.FS_createPath("/", "working", true, true);
-//         setInterval(processCanvas, 10); // Run processing every 500 ms
-//     };
-// }
-// openCvReady();
+// Call processCanvas periodically...
+setInterval(processCanvas, 700); // Or integrate with your animate pipelineo

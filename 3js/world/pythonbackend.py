@@ -5,12 +5,58 @@ import numpy as np
 from PIL import Image
 from ultralytics import YOLO
 import traceback
+import numpy as np
+
 
 app = FastAPI()
 
+# Utility function to compute IoU (Intersection over Union)
+def compute_iou(box1, box2):
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    # Compute the area of intersection
+    intersection = max(0, x2 - x1) * max(0, y2 - y1)
+
+    # Compute the area of both boxes
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+
+    # Compute the union area
+    union = area1 + area2 - intersection
+
+    # Avoid division by zero
+    if union == 0:
+        return 0
+
+    # Return IoU
+    return intersection / union
+
+# Non-Maximum Suppression
+def non_maximum_suppression(predictions, iou_threshold=0.5):
+    if len(predictions) == 0:
+        return []
+
+    # Sort predictions by confidence score in descending order
+    predictions = sorted(predictions, key=lambda x: x['score'], reverse=True)
+
+    # Perform NMS
+    filtered_predictions = []
+    while predictions:
+        best_prediction = predictions.pop(0)
+        filtered_predictions.append(best_prediction)
+        predictions = [
+            pred for pred in predictions
+            if compute_iou(best_prediction['box'], pred['box']) < iou_threshold
+        ]
+
+    return filtered_predictions
+
 # Load YOLOv8 model
 try:
-    model = YOLO('yolov8n.pt')  # Adjust to 'yolov11n.pt' when released
+    model = YOLO('weights/best.pt')  # Adjust to 'yolov11n.pt' when released
 except Exception as e:
     print("Error loading YOLO model:", str(e))
     traceback.print_exc()
@@ -60,8 +106,11 @@ async def websocket_predict(websocket: WebSocket):
                 )
             ]
 
-            # Send processed predictions back to the client
-            await websocket.send_json({"predictions": processed})
+            # Apply Non-Maximum Suppression
+            filtered_predictions = non_maximum_suppression(processed, iou_threshold=0.5)
+
+            # Send filtered predictions back to the client
+            await websocket.send_json({"predictions": filtered_predictions})
     except WebSocketDisconnect:
         print("WebSocket client disconnected")
     except Exception as e:

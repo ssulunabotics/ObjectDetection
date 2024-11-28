@@ -99,10 +99,10 @@ self.onmessage = function (event) {
     drivabilityScores[0] = Math.max(0, drivabilityScores[0] - penalty);
     drivabilityScores[drivabilityScores.length - 1] = Math.max(0, drivabilityScores[drivabilityScores.length - 1] - penalty);
 
-    // Normalize combined scores
-    const maxScore = Math.max(...drivabilityScores);
-    const minScore = Math.min(...drivabilityScores);
-    drivabilityScores = drivabilityScores.map(score => (score - minScore) / (maxScore - minScore));
+    // // Normalize combined scores
+    // const maxScore = Math.max(...drivabilityScores);
+    // const minScore = Math.min(...drivabilityScores);
+    // drivabilityScores = drivabilityScores.map(score => (score - minScore) / (maxScore - minScore));
 
     self.postMessage({ drivabilityScores });
 };
