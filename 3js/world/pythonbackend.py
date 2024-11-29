@@ -1,3 +1,8 @@
+# Python Backend
+# Server for running YOLO model and sending predictions back over WebSocket
+# IN: Binary pixel data
+# OUT: json predictions object
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,6 +11,10 @@ from PIL import Image
 from ultralytics import YOLO
 import traceback
 import numpy as np
+import struct
+from concurrent.futures import ThreadPoolExecutor
+
+executor = ThreadPoolExecutor(max_workers=2)
 
 
 app = FastAPI()
@@ -33,6 +42,18 @@ def compute_iou(box1, box2):
 
     # Return IoU
     return intersection / union
+
+# Filter out very large boxes
+def filter_large_boxes(predictions, max_area_threshold=0.3):
+    filtered_boxes = []
+    for pred in predictions:
+        x1, y1, x2, y2 = pred['box']
+        width = x2 - x1
+        height = y2 - y1
+        area = width * height
+        if area < max_area_threshold:  # Adjust the threshold as needed
+            filtered_boxes.append(pred)
+    return filtered_boxes
 
 # Non-Maximum Suppression
 def non_maximum_suppression(predictions, iou_threshold=0.5):
@@ -76,17 +97,20 @@ async def websocket_predict(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # Receive JSON data from WebSocket
-            data = await websocket.receive_json()
-            width = data['width']
-            height = data['height']
-            pixel_data = np.array(data['pixels'], dtype=np.uint8).reshape((height, width, 4))  # RGBA format
+            # Receive binary data from WebSocket
+            data = await websocket.receive_bytes()
+            width = int.from_bytes(data[:4], "big")  # First 4 bytes: width
+            height = int.from_bytes(data[4:8], "big")  # Next 4 bytes: height
 
-            # Convert raw pixels to PIL Image (drop alpha channel)
-            image = Image.fromarray(pixel_data[:, :, :3])  # Use only RGB channels
+            # Grayscale pixels are a single-channel array
+            pixel_data = np.frombuffer(data[8:], dtype=np.uint8).reshape((height, width))
+
+            # Convert the grayscale image to RGB
+            grayscale_image = Image.fromarray(pixel_data, mode='L')  # Create grayscale image
+            rgb_image = grayscale_image.convert("RGB")  # Convert to RGB for YOLO model
 
             # Run YOLO inference
-            results = model(image)
+            results = model(source=np.array(rgb_image), task='predict', device='cpu')
 
             # Process YOLO predictions
             predictions = results[0].boxes  # Access the boxes attribute
@@ -106,8 +130,13 @@ async def websocket_predict(websocket: WebSocket):
                 )
             ]
 
+            # Filter out very large boxes
+            max_area_threshold = width * height * 0.05  # 5% of the image area
+            filtered_large_boxes = filter_large_boxes(processed, max_area_threshold)
+
             # Apply Non-Maximum Suppression
-            filtered_predictions = non_maximum_suppression(processed, iou_threshold=0.5)
+            filtered_predictions = non_maximum_suppression(filtered_large_boxes, iou_threshold=0.5)
+
 
             # Send filtered predictions back to the client
             await websocket.send_json({"predictions": filtered_predictions})

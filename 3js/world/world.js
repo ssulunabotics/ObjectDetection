@@ -1,16 +1,14 @@
 // ---------------------------------------------------------------- //
-// heightmap-noise.js
+// world.js
 // Generate a 3D moon scene of navigable terrain
 // 1. Generates a noise function for soft slopes
 // 2. Generates lighting surface normals and locations for potholes
-//      TODO:
-//    - Right now potholes are just perfect cones
-//    - Surface normals only reflect a single light source I think
-//    - Positioning the light sources would be helpful probably
 // ---------------------------------------------------------------- //
 
 import * as THREE from 'three';
 
+import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/DRACOLoader.js';
+import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/GLTFLoader.js'
 import { LoopSubdivision } from 'https://unpkg.com/three-subdivide/build/index.module.js';
 
 /*================================================================
@@ -25,6 +23,11 @@ let drivabilityScores = [];
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
+const spaceTexture = new THREE.TextureLoader().load('/static/textures/space.jpg', () => {
+});
+scene.background = spaceTexture;
+// Set the texture as the scene background
+scene.background = spaceTexture;
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true; // Enable shadow mapping
 document.body.appendChild(renderer.domElement);
@@ -139,6 +142,9 @@ statsPanel.style.fontSize = '14px';
 statsPanel.style.lineHeight = '1.5';
 document.body.appendChild(statsPanel);
 
+let drawTime = 0; // Variable to store the time taken for visualization
+let drawSpeed = 0;
+
 // Utility function to update stats
 function updateStats(distanceToGoal, inferenceSpeed) {
     statsPanel.innerHTML = `
@@ -181,15 +187,24 @@ setInterval(() => {
 // Variables for the goal marker
 let goalMarker = null;
 
-
-// Function to create a diamond-shaped marker
 function createDiamondMarker() {
-    const diamondGeometry = new THREE.ConeGeometry(5, 10, 4); // Cone geometry with 4 sides
-    const diamondMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 }); // Bright green
-    const diamond = new THREE.Mesh(diamondGeometry, diamondMaterial);
+    // Create the upper cone
+    const upperConeGeometry = new THREE.ConeGeometry(5, 10, 4); // Base radius: 5, Height: 10, 4-sided cone
+    const upperConeMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 }); // Bright green
+    const upperCone = new THREE.Mesh(upperConeGeometry, upperConeMaterial);
 
-    // Flip the cone upside down to resemble a diamond
-    diamond.rotation.x = Math.PI;
+    // Create the lower cone
+    const lowerConeGeometry = new THREE.ConeGeometry(5, 10, 4); // Same dimensions as the upper cone
+    const lowerCone = new THREE.Mesh(lowerConeGeometry, upperConeMaterial);
+
+    // Flip the lower cone to point upwards
+    lowerCone.rotation.x = Math.PI;
+    lowerCone.position.y = 10; // Position the lower cone below the upper cone
+
+    // Group the two cones together
+    const diamond = new THREE.Group();
+    // diamond.add(upperCone);
+    diamond.add(lowerCone);
 
     return diamond;
 }
@@ -222,6 +237,8 @@ function placeGoalAt(x, z) {
     console.log(`Goal placed at X: ${x}, Z: ${z}`);
 }
 
+let goalMarkerSet;
+
 // Event listener to handle mouse clicks for placing the goal
 function onSceneClick(event) {
     // Calculate mouse position in normalized device coordinates (-1 to +1)
@@ -240,6 +257,7 @@ function onSceneClick(event) {
         const { x, z } = intersects[0].point; // Get the intersection point
         placeGoalAt(x, z); // Place the goal at the clicked position
     }
+    goalMarkerSet = true;
 }
 
 // Add event listener for mouse clicks
@@ -659,12 +677,39 @@ function createWalls() {
 // =================================================================
 // OBJECTS
 // =================================================================
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+// dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.148.0/examples/js/libs/draco/'); // Path to Draco decoder
+const loader = new GLTFLoader();
+loader.setDRACOLoader(dracoLoader);
 
+// decorative space ship
+loader.load(
+    '/static/3dmodels/apollo.glb', // Replace with the actual path to your .glb file
+    (gltf) => {
+        // This callback is executed once the .glb is loaded
+        const model = gltf.scene; // Access the 3D model
+        scene.add(model); // Add the model to the scene
+
+        // Optional: Adjust position, rotation, and scale of the model
+        model.position.set(-100, 40, -100);
+        model.rotation.y = Math.PI / 2; // Rotate 90 degrees
+        model.scale.set(5, 5, 5);
+    },
+    (xhr) => {
+        // Optional: Progress callback
+        console.log(`Loading progress: ${(xhr.loaded / xhr.total) * 100}%`);
+    },
+    (error) => {
+        // Error callback
+        console.error('An error occurred while loading the .glb file:', error);
+    }
+);
 
 // Person for YOLO Testing
 // // Load an image texture
 // const imageLoader = new THREE.TextureLoader();
-// const personTexture = imageLoader.load('../static/textures/girl.png', () => {
+// const personTexture = imageLoader.load('../static/textures/person.png', () => {
 //     console.log('Person image loaded.');
 // });
 
@@ -952,13 +997,60 @@ function updateAutonomousMode() {
     }
 }
 
+function trackCameraMovement() {
+    const currentPosition = new THREE.Vector3();
+    const currentQuaternion = new THREE.Quaternion();
+
+    camera.getWorldPosition(currentPosition);
+    camera.getWorldQuaternion(currentQuaternion);
+
+    // Calculate position and rotation deltas
+    const positionDelta = currentPosition.clone().sub(lastCameraPosition);
+    const rotationDelta = lastCameraQuaternion.clone().inverse().multiply(currentQuaternion);
+
+    lastCameraPosition.copy(currentPosition);
+    lastCameraQuaternion.copy(currentQuaternion);
+
+    return { positionDelta, rotationDelta };
+}
+
+function updateBoundingBoxesBasedOnCamera() {
+    const canvasWidth = renderer.domElement.width;
+    const canvasHeight = renderer.domElement.height;
+
+    // Get the camera movement deltas
+    const { positionDelta, rotationDelta } = trackCameraMovement();
+
+    predictions.forEach((pred) => {
+        const { trackId } = pred;
+
+        // Get the bounding box element
+        const bbox = document.getElementById(trackId);
+        if (!bbox) return;
+
+        // Get the current world position of the obstacle
+        const worldPosition = getObstacleWorldPosition(pred, camera, canvasWidth, canvasHeight);
+        if (!worldPosition) return;
+
+        // Apply the position delta to the world position
+        worldPosition.add(positionDelta);
+
+        // Project the new world position to screen space
+        const screenPosition = projectToScreen(worldPosition, camera, canvasWidth, canvasHeight);
+
+        // Update the bounding box position on the screen
+        bbox.style.left = `${screenPosition.x}px`;
+        bbox.style.top = `${screenPosition.y}px`;
+    });
+}
+
 // Modify the animate function to update the camera
 function animate() {
     requestAnimationFrame(animate);
     updateCamera(); // Call the camera update function
+    // updateBoundingBoxes(camera, renderer.domElement.width, renderer.domElement.height);
     updateAutonomousMode(); // Autonomous camera updates
     renderer.render(scene, camera);
-    updateMinimap(); // Minimap render
 }
 
 animate();
@@ -983,60 +1075,6 @@ function adjustGuidelinesOverlay() {
 window.addEventListener('resize', adjustGuidelinesOverlay);
 adjustGuidelinesOverlay(); // Initial call
 
-// // Function to update drivability guidelines on overlay
-// function updateGuidelines(drivabilityScores) {
-//     if (!showGuidelines) return; // Skip updates if guidelines are hidden
-//     guidelinesOverlay.innerHTML = ''; // Clear previous guidelines
-
-//     const numSlices = drivabilityScores.length;
-//     const sliceWidth = canvas.width / numSlices; // Use canvas width, not window
-//     const overlayHeight = canvas.height; // Use canvas height, not window
-
-//     // Find the three adjacent regions with the highest combined score
-//     let maxSum = -Infinity;
-//     let maxIndex = 0;
-//     for (let i = 0; i < numSlices - 2; i++) {
-//         const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2] + drivabilityScores[i + 3] + drivabilityScores[i + 4];
-//         if (sum > maxSum) {
-//             maxSum = sum;
-//             maxIndex = i;
-//         }
-//     }
-
-//     for (let i = 0; i < numSlices; i++) {
-//         // Create a div to represent each guideline region
-//         const region = document.createElement('div');
-//         region.className = 'guideline-region';
-//         region.style.width = `${sliceWidth}px`;
-//         region.style.height = `${overlayHeight}px`;
-//         region.style.left = `${i * sliceWidth}px`;
-//         region.style.position = 'absolute';
-//         region.style.top = '0';
-
-//         // Highlight the three adjacent regions with the highest scores
-//         if (i >= maxIndex && i < maxIndex + 5) {
-//             region.style.backgroundColor = 'rgba(173, 216, 230, 0.05)'; // Light blue with low opacity
-//         }
-
-//         // Create line for slice boundary
-//         // const line = document.createElement('div');
-//         // line.className = 'guideline-line';
-//         // line.style.left = `${(i + 1) * sliceWidth}px`;
-//         // line.style.height = `${overlayHeight}px`;
-//         // guidelinesOverlay.appendChild(line);
-
-//         // // Create score label
-//         // const score = document.createElement('span');
-//         // score.className = 'guideline-score';
-//         // score.innerText = drivabilityScores[i].toFixed(2);
-//         // score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
-//         // score.style.top = `${overlayHeight / 3}px`;
-//         // guidelinesOverlay.appendChild(score);
-
-//         // Append region div for background color
-//         guidelinesOverlay.appendChild(region);
-//     }
-// }
 function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
     if (!showGuidelines) return; // Skip updates if guidelines are hidden
     guidelinesOverlay.innerHTML = ''; // Clear previous guidelines
@@ -1056,13 +1094,31 @@ function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
         };
     });
 
+    // Convert goal position to screen space
+    let goalScreenPos = null;
+    let goalDepth = null;
+
+    if (goalPosition) {
+        const projectedGoal = new THREE.Vector3(goalPosition.x, goalPosition.y, goalPosition.z).project(camera);
+        goalScreenPos = {
+            x: ((projectedGoal.x + 1) / 2) * canvas.width,
+            y: ((-projectedGoal.y + 1) / 2) * canvas.height,
+        };
+        goalDepth = projectedGoal.z; // Capture the depth (z) of the goal
+    }
+    
     // Update drivability scores with obstacles in screen space
     screenSpaceObstacles.forEach((obstacle) => {
+        // Exclude obstacles further from the camera than the goal
+        if (goalDepth !== null && obstacle.z > goalDepth) {
+            return; // Skip this obstacle
+        }
+    
         const sliceIndex = Math.floor(obstacle.x / sliceWidth);
         if (sliceIndex >= 0 && sliceIndex < numSlices) {
             // Calculate the penalty weight based on proximity to the camera
             const proximityWeight = Math.max(0, 1 - obstacle.y / canvas.height); // Closer obstacles have higher weights
-            const penalty = 1.0 * proximityWeight; // Scale penalty by weight
+            const penalty = proximityWeight * proximityWeight; // Scale penalty by weight
 
             // Apply penalty to the slice containing the obstacle
             drivabilityScores[sliceIndex] -= penalty;
@@ -1074,15 +1130,6 @@ function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
         }
     });
 
-    // Convert goal position to screen space
-    let goalScreenPos = null;
-    if (goalPosition) {
-        goalScreenPos = new THREE.Vector3(goalPosition.x, goalPosition.y, goalPosition.z).project(camera);
-        goalScreenPos = {
-            x: ((goalScreenPos.x + 1) / 2) * canvas.width,
-            y: ((-goalScreenPos.y + 1) / 2) * canvas.height,
-        };
-    }
 
     // Boost scores based on proximity to the goal in screen space
     if (goalScreenPos) {
@@ -1094,7 +1141,7 @@ function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
             const distanceToGoal = Math.abs(sliceCenterX - goalScreenPos.x); // Only consider horizontal distance
 
             // Apply a stronger boost for closer slices
-            const weight = 0.3; // Adjust weight to emphasize goal proximity
+            const weight = 0.2; // Adjust weight to emphasize goal proximity
             drivabilityScores[i] += Math.max(1 - distanceToGoal / canvas.width, 0) * weight;
 
             // Track the closest slice to the goal
@@ -1106,7 +1153,7 @@ function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
 
         // Add a flat gain to the closest slice
         if (closestSliceIndex >= 0) {
-            const flatGain = 0.2; // Adjust this value to control the flat gain
+            const flatGain = 0.1; // Adjust this value to control the flat gain
             drivabilityScores[closestSliceIndex] += flatGain;
         }
     }
@@ -1134,8 +1181,16 @@ function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
 
         // Highlight the best path (5 slices)
         if (i >= bestIndex && i < bestIndex + 5) {
-            region.style.backgroundColor = 'rgba(0, 255, 255, 0.1)'; // Cyan for best path
+            region.style.backgroundColor = 'rgba(0, 132, 255, 0.1)'; // Cyan for best path
         }
+
+        //         // // Create score label
+//         // const score = document.createElement('span');
+//         // score.className = 'guideline-score';
+//         // score.innerText = drivabilityScores[i].toFixed(2);
+//         // score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
+//         // score.style.top = `${overlayHeight / 3}px`;
+//         // guidelinesOverlay.appendChild(score);
 
         guidelinesOverlay.appendChild(region);
     }
@@ -1163,6 +1218,56 @@ cvWorker.onmessage = function (event) {
 // After WebGL initialization
 setupOverlay();
 
+// Declare variables for flipped dimensions
+let flippedWidth = 0;
+let flippedHeight = 0;
+
+// Instantiate the pixel worker
+const pixelWorker = new Worker('/static/pixelWorker.js');
+
+// Handle messages from the worker
+pixelWorker.onmessage = function (event) {
+    const { type, pixels } = event.data;
+    
+    if (type === 'flipped') {
+        console.log('Pixels flipped:', pixels);
+
+        // Proceed to resizing after flipping is complete
+        if (yoloProcessingActive) {
+            pixelWorker.postMessage({
+                type: 'resize',
+                data: { sourcePixels: pixels, sourceWidth: flippedWidth, sourceHeight: flippedHeight, targetWidth: 640, targetHeight: 640 },
+            });
+        }
+    }
+
+    if (type === 'resized') {
+        console.log('Pixels resized:', pixels);
+    
+        // Prepare the binary frame data
+        const frameWidth = 640;
+        const frameHeight = 640;
+    
+        // Create an ArrayBuffer to hold width, height, and pixel data
+        const buffer = new ArrayBuffer(8 + pixels.length); // 4 bytes each for width and height
+        const view = new DataView(buffer);
+    
+        // Pack width and height as 32-bit integers
+        view.setUint32(0, frameWidth); // Width at byte offset 0
+        view.setUint32(4, frameHeight); // Height at byte offset 4
+    
+        // Append pixel data starting at byte offset 8
+        const pixelData = new Uint8Array(buffer, 8);
+        pixelData.set(pixels);
+    
+        // Send the binary frame data over WebSocket
+        if (websocket.readyState === WebSocket.OPEN) {
+            websocket.send(buffer);
+            console.log('Binary frame data sent to WebSocket');
+        }
+    }
+};
+
 // Establish WebSocket connection
 const websocket = new WebSocket("ws://localhost:8000/ws/predict");
 
@@ -1178,11 +1283,16 @@ websocket.onmessage = (event) => {
         // Update the global predictions variable
         predictions = data.predictions;
         stopInferenceTimer();
+        const overlayCanvas = document.getElementById('yolo-overlay');
 
         // Update YOLO visualization and minimap
-        const overlayCanvas = document.getElementById('yolo-overlay');
+        const drawStartTime = performance.now();
+
         visualizePredictions(overlayCanvas.width, overlayCanvas.height, 640);
         updateMinimap(); // Update minimap with the latest predictions
+        const drawEndTime = performance.now();
+        drawSpeed = drawEndTime - drawStartTime;
+
     }
 };
 
@@ -1194,48 +1304,6 @@ websocket.onclose = () => {
     console.log("WebSocket connection closed");
 };
 
-function maskGoalFromPixels(pixels, width, height) {
-    // Get goal position in screen space
-    const goalScreenPos = new THREE.Vector3(
-        goalMarker.position.x,
-        goalMarker.position.y,
-        goalMarker.position.z
-    ).project(camera);
-
-    const goalX = Math.floor(((goalScreenPos.x + 1) / 2) * width);
-    const goalY = Math.floor(((-goalScreenPos.y + 1) / 2) * height);
-
-    const maskRadius = 50; // Radius of the goal marker in pixels
-
-    for (let y = -maskRadius; y <= maskRadius; y++) {
-        for (let x = -maskRadius; x <= maskRadius; x++) {
-            const pixelX = goalX + x;
-            const pixelY = goalY + y;
-
-            // Ensure the pixel is within bounds and within the mask radius
-            if (
-                pixelX >= 0 &&
-                pixelX < width &&
-                pixelY >= 0 &&
-                pixelY < height &&
-                Math.sqrt(x * x + y * y) <= maskRadius
-            ) {
-                const index = (pixelY * width + pixelX) * 4; // Current pixel index (RGBA)
-
-                // Calculate the pixel below in the Y direction
-                const belowY = Math.min(pixelY + maskRadius, height - 1); // Ensure it stays within bounds
-                const belowIndex = (belowY * width + pixelX) * 4; // Index of the pixel below
-
-                // Copy the RGBA values from the pixel below
-                pixels[index] = pixels[belowIndex]; // R
-                pixels[index + 1] = pixels[belowIndex + 1]; // G
-                pixels[index + 2] = pixels[belowIndex + 2]; // B
-                pixels[index + 3] = pixels[belowIndex + 3]; // A
-            }
-        }
-    }
-}
-
 // Variables to track the camera's last known state
 let lastCameraPosition = new THREE.Vector3();
 let lastCameraQuaternion = new THREE.Quaternion();
@@ -1243,6 +1311,10 @@ let cameraMoved = false;
 
 // Function to check if the camera has moved
 function hasCameraMoved() {
+    if(goalMarkerSet){
+        goalMarkerSet = false;
+        return true;
+    }
     const currentPosition = new THREE.Vector3();
     const currentQuaternion = new THREE.Quaternion();
 
@@ -1260,126 +1332,64 @@ function hasCameraMoved() {
 
     return cameraMoved;
 }
+let isProcessingYOLO = false;
 
 // Function to process the WebGL canvas
 async function processCanvas() {
-    if(!showGuidelines && !yoloProcessingActive) return;
+    if (!showGuidelines && !yoloProcessingActive) return;
 
     // Check if the camera has moved
     if (!hasCameraMoved()) {
         console.log("Camera has not moved. Skipping YOLO processing.");
         return; // Skip processing if the camera hasn't moved
     }
-    startInferenceTimer();
-
-    const canvas = renderer.domElement; // WebGL canvas
-    const width = canvas.width;
-    const height = canvas.height;
-
-    const gl = renderer.getContext();
-    const pixels = new Uint8Array(width * height * 4);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    // Flip the pixel data vertically
-    flipPixelsVertically(pixels, width, height);
-
-    // Mask out the goal if it exists
-    if (goalMarker) {
-        maskGoalFromPixels(pixels, width, height);
-    }
-
-
-    if (showGuidelines) {
-    // Send pixel data to OpenCV and YOLO workers
-    cvWorker.postMessage({ type: 'process', pixels, width, height });
-    }
-
-    console.log("YOLO Processing Active:", yoloProcessingActive);
-
     
-    if (yoloProcessingActive) {
-        // Resize pixel data to 640x640 for YOLO using bilinear interpolation
-        const resizedPixels = resizePixelsBilinear(pixels, width, height, 640, 640);
+    if (isProcessingYOLO) return; // Ensure only one process is active at a time
+    isProcessingYOLO = true;
 
-        // Prepare frame data
-        const frameData = {
-            width: 640,
-            height: 640,
-            pixels: Array.from(resizedPixels),
-        };
+    try {
+        startInferenceTimer();
 
-        // Send the frame data to the WebSocket server
-        if (websocket.readyState === WebSocket.OPEN) {
-            websocket.send(JSON.stringify(frameData));
-        } else {
-            console.error("WebSocket is not open");
+        const canvas = renderer.domElement; // WebGL canvas
+        const width = canvas.width;
+        const height = canvas.height;
+
+        const gl = renderer.getContext();
+        const rgbaPixels = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgbaPixels);
+        // Convert RGBA to grayscale
+        const grayscalePixels = new Uint8Array(width * height);
+        for (let i = 0; i < rgbaPixels.length; i += 4) {
+            // Use luminance formula to compute grayscale value
+            const r = rgbaPixels[i];
+            const g = rgbaPixels[i + 1];
+            const b = rgbaPixels[i + 2];
+            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+            grayscalePixels[i / 4] = gray; // Store the grayscale value
         }
-    }
-}
 
+        // Update flipped dimensions
+        flippedWidth = width;
+        flippedHeight = height;
 
-// Function to flip the pixel data vertically
-// Correct difference with webgl origin coordinates
-function flipPixelsVertically(pixels, width, height) {
-    const bytesPerRow = width * 4; // 4 bytes per pixel (RGBA)
-    const tempRow = new Uint8Array(bytesPerRow);
+        // Send grayscale data to the pixelWorker
+        pixelWorker.postMessage({ type: 'flip', data: { pixels: grayscalePixels, width, height } });
 
-    for (let row = 0; row < height / 2; row++) {
-        const topRow = row * bytesPerRow;
-        const bottomRow = (height - row - 1) * bytesPerRow;
-
-        // Swap rows
-        tempRow.set(pixels.subarray(topRow, topRow + bytesPerRow));
-        pixels.set(pixels.subarray(bottomRow, bottomRow + bytesPerRow), topRow);
-        pixels.set(tempRow, bottomRow);
-    }
-}
-
-function resizePixelsBilinear(sourcePixels, sourceWidth, sourceHeight, targetWidth, targetHeight) {
-    const targetPixels = new Uint8Array(targetWidth * targetHeight * 4); // RGBA format
-
-    const xRatio = sourceWidth / targetWidth;
-    const yRatio = sourceHeight / targetHeight;
-
-    for (let y = 0; y < targetHeight; y++) {
-        for (let x = 0; x < targetWidth; x++) {
-            const targetIndex = (y * targetWidth + x) * 4;
-
-            // Calculate source coordinates
-            const srcX = x * xRatio;
-            const srcY = y * yRatio;
-
-            // Get the integer and fractional parts of the source coordinates
-            const x0 = Math.floor(srcX);
-            const x1 = Math.min(x0 + 1, sourceWidth - 1);
-            const y0 = Math.floor(srcY);
-            const y1 = Math.min(y0 + 1, sourceHeight - 1);
-
-            const dx = srcX - x0;
-            const dy = srcY - y0;
-
-            // Perform bilinear interpolation for each color channel (R, G, B, A)
-            for (let channel = 0; channel < 4; channel++) {
-                const c00 = sourcePixels[(y0 * sourceWidth + x0) * 4 + channel];
-                const c01 = sourcePixels[(y0 * sourceWidth + x1) * 4 + channel];
-                const c10 = sourcePixels[(y1 * sourceWidth + x0) * 4 + channel];
-                const c11 = sourcePixels[(y1 * sourceWidth + x1) * 4 + channel];
-
-                // Interpolate
-                const value =
-                    c00 * (1 - dx) * (1 - dy) +
-                    c01 * dx * (1 - dy) +
-                    c10 * (1 - dx) * dy +
-                    c11 * dx * dy;
-
-                targetPixels[targetIndex + channel] = value;
-            }
+        // Send grayscale data to the cvWorker if guidelines are enabled
+        if (showGuidelines) {
+            cvWorker.postMessage({ type: 'process', pixels: grayscalePixels, width, height });
         }
-    }
 
-    return targetPixels;
+        console.log("YOLO Processing Active:", yoloProcessingActive);
+    } catch (error) {
+        console.error("Error processing canvas:", error);
+    } finally {
+        isProcessingYOLO = false; // Reset the flag
+        updateMinimap(); // Minimap render
+    }
 }
 
-// Function to save ImageData to a file
+// Debug Function to save ImageData to a file
 function saveImageData(imageData) {
     // Create a temporary canvas
     const tempCanvas = document.createElement('canvas');
@@ -1501,50 +1511,142 @@ function getObstacleWorldPosition(prediction, camera, canvasWidth, canvasHeight,
     }
     return null;
 }
+// Track predictions across frames
+let previousPredictions = [];
 
-// Visualize YOLO Predictions// Visualize YOLO Predictions
+function computeIoU(boxA, boxB) {
+    const x1 = Math.max(boxA[0], boxB[0]);
+    const y1 = Math.max(boxA[1], boxB[1]);
+    const x2 = Math.min(boxA[2], boxB[2]);
+    const y2 = Math.min(boxA[3], boxB[3]);
+
+    const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    const areaA = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1]);
+    const areaB = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1]);
+
+    const union = areaA + areaB - intersection;
+    return intersection / union;
+}
+
 function visualizePredictions(canvasWidth, canvasHeight, yoloInputSize = 640) {
-    const overlayCanvas = document.getElementById('yolo-overlay');
-    const ctx = overlayCanvas.getContext('2d');
+    const overlayContainer = document.getElementById('yolo-overlay');
+    if (!overlayContainer) {
+        console.error('Overlay container not found');
+        return;
+    }
 
-    // Clear previous drawings
-    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    const xScale = canvasWidth / yoloInputSize;
+    const yScale = canvasHeight / yoloInputSize;
 
-    predictions.forEach((pred) => {
+    const classLabels = ['Hole', 'Rock'];
+    const classColors = {
+        0: 'rgba(75, 163, 251, 0.8)',
+        1: 'rgba(0, 200, 255, 0.8)',
+    };
+
+    const activeBoxes = new Set();
+    const updatedPredictions = [];
+
+    // Raycaster setup
+    const raycaster = new THREE.Raycaster();
+    const cameraPosition = new THREE.Vector3();
+    camera.getWorldPosition(cameraPosition);
+
+    const goalPosition = goalMarker ? goalMarker.position : null;
+
+    if (goalPosition) {
+        const goalDirection = new THREE.Vector3()
+            .subVectors(goalPosition, cameraPosition)
+            .normalize();
+        raycaster.set(cameraPosition, goalDirection);
+    }
+
+    predictions.forEach((pred, index) => {
         const { box, score, class: classIndex } = pred;
-        const [x1, y1, x2, y2] = box; // Bounding box in YOLO input size
+        const [x1, y1, x2, y2] = box;
 
-        // Scale bounding box to the canvas size
-        const scaledX1 = (x1 / yoloInputSize) * canvasWidth;
-        const scaledY1 = (y1 / yoloInputSize) * canvasHeight;
-        const scaledX2 = (x2 / yoloInputSize) * canvasWidth;
-        const scaledY2 = (y2 / yoloInputSize) * canvasHeight;
+        const scaledX1 = x1 * xScale;
+        const scaledY1 = y1 * yScale;
+        const scaledX2 = x2 * xScale;
+        const scaledY2 = y2 * yScale;
 
         const width = scaledX2 - scaledX1;
         const height = scaledY2 - scaledY1;
 
-        // Draw bounding box with a custom sci-fi blue
-        ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)'; // Cyan-like glowing blue
-        ctx.lineWidth = 2; // Slightly thicker for more prominence
-        ctx.shadowColor = 'rgba(0, 255, 255, 0.5)'; // Glow effect
-        ctx.shadowBlur = 10; // Blur radius for the glow
-        ctx.strokeRect(scaledX1, scaledY1, width, height);
+        // Convert bounding box center to world position
+        const obstaclePosition = getObstacleWorldPosition(pred, camera, canvasWidth, canvasHeight);
 
-        // Add label with a custom sci-fi font and color
-        ctx.fillStyle = 'rgba(0, 200, 255, 1)'; // Vibrant sci-fi blue
-        ctx.font = 'bold 16px Orbitron, Arial'; // Orbitron is a sci-fi font (fallback to Arial if unavailable)
-        ctx.shadowBlur = 0; // Disable shadow for text to keep it crisp
-        ctx.fillText(
-            `Class: ${classIndex}, Score: ${score.toFixed(2)}`,
-            scaledX1,
-            scaledY1 - 5
-        );
+        // Skip rendering if the obstacle is on the ray to the goal
+        if (goalPosition && obstaclePosition) {
+            const distanceToGoal = raycaster.ray.distanceToPoint(obstaclePosition);
+            if (distanceToGoal < 20) {
+                // Skip this prediction if it lies on the ray
+                return;
+            }
+        }
+
+        // Match this prediction with the closest previous prediction
+        let trackId = null;
+        let maxIoU = 0;
+
+        previousPredictions.forEach((prev) => {
+            const iou = computeIoU(box, prev.box);
+            if (iou > maxIoU) {
+                maxIoU = iou;
+                trackId = prev.trackId;
+            }
+        });
+
+        if (!trackId || maxIoU < 0.5) {
+            trackId = `bbox-${Date.now()}-${index}`;
+        }
+
+        updatedPredictions.push({ ...pred, trackId });
+        activeBoxes.add(trackId);
+
+        let bbox = document.getElementById(trackId);
+        if (!bbox) {
+            bbox = document.createElement('div');
+            bbox.id = trackId;
+            bbox.className = 'bounding-box';
+            bbox.style.borderColor = classColors[classIndex] || 'rgba(255, 0, 0, 0.8)';
+
+            const label = document.createElement('span');
+            label.className = 'bounding-box-label';
+            label.innerText = `${classLabels[classIndex] || `Class ${classIndex}`}, ${score.toFixed(2)}`;
+            bbox.appendChild(label);
+
+            overlayContainer.appendChild(bbox);
+        }
+
+        bbox.style.left = `${scaledX1}px`;
+        bbox.style.top = `${scaledY1}px`;
+        bbox.style.width = `${width}px`;
+        bbox.style.height = `${height}px`;
     });
+
+    Array.from(overlayContainer.children).forEach((child) => {
+        if (!activeBoxes.has(child.id)) {
+            overlayContainer.removeChild(child);
+        }
+    });
+
+    previousPredictions = updatedPredictions;
 }
 
 // Adjust the YOLO overlay on window resize
 window.addEventListener('resize', adjustYoloOverlay);
 adjustYoloOverlay(); // Initial adjustment
 
-// Call processCanvas periodically...
-setInterval(processCanvas, 700); // Or integrate with your animate pipelineo
+// Delay in milliseconds to allow other systems to engage
+const setupTime = 2000; // 2 seconds setup time
+
+// Function to start the periodic processCanvas execution
+function startProcessing() {
+  setInterval(processCanvas, 300); // Start processing every 300ms
+}
+
+// Delay the start of the processing
+setTimeout(startProcessing, setupTime);
+
+console.log(`Starting processCanvas execution after ${setupTime} ms setup time.`);
