@@ -1,32 +1,33 @@
 // ---------------------------------------------------------------- //
-// heightmap-noise.js
+// world.js
 // Generate a 3D moon scene of navigable terrain
 // 1. Generates a noise function for soft slopes
 // 2. Generates lighting surface normals and locations for potholes
-//      TODO:
-//    - Right now potholes are just perfect cones
-//    - Surface normals only reflect a single light source I think
-//    - Positioning the light sources would be helpful probably
-// 3. Probably want a Player Camera mode
 // ---------------------------------------------------------------- //
 
 import * as THREE from 'three';
 
+import { DRACOLoader } from 'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/DRACOLoader.js';
+import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/loaders/GLTFLoader.js'
 import { LoopSubdivision } from 'https://unpkg.com/three-subdivide/build/index.module.js';
-
-// import SubdivisionModifier from 'three/addons/modifiers/SubdivisionModifier.js'; // Import if available
 
 /*================================================================
 
 Setup
 
 ================================================================*/
-
+let predictions = []; // Global variable to store YOLO predictions
+let drivabilityScores = [];
 
 // Create the scene, camera, and renderer
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
+const spaceTexture = new THREE.TextureLoader().load('/static/textures/space.jpg', () => {
+});
+scene.background = spaceTexture;
+// Set the texture as the scene background
+scene.background = spaceTexture;
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true; // Enable shadow mapping
 document.body.appendChild(renderer.domElement);
@@ -36,8 +37,8 @@ const width = 512; // Width of the heightmap
 const height = 512; // Height of the heightmap
 const geometry = new THREE.PlaneGeometry(width, height, width - 1, height - 1);
 
-// Create a gray texture
-const texture = new THREE.TextureLoader().load('../textures/regolith2.jpg'); // Replace with your texture path
+// Create a gray texture for the Environment base
+const texture = new THREE.TextureLoader().load('../static/textures/regolith2.jpg'); // Replace with your texture path
 const material = new THREE.MeshStandardMaterial({ map: texture, wireframe: false });
 const plane = new THREE.Mesh(geometry, material);
 plane.receiveShadow = true; // Make sure the plane can receive shadows
@@ -48,33 +49,371 @@ scene.add(plane);
 // const noiseCanvas = document.getElementById('noiseCanvas');
 // const noiseCtx = noiseCanvas.getContext('2d');
 // SETUP AUTONOMOUS MODE
-// Floating button panel for autonomous controls
-const controlPanel = document.createElement('div');
-controlPanel.id = 'control-panel';
-controlPanel.style.position = 'fixed';
-controlPanel.style.bottom = '20px';
-controlPanel.style.left = '20px';
-controlPanel.style.padding = '10px';
-controlPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-controlPanel.style.borderRadius = '5px';
-controlPanel.style.zIndex = '1000';
-document.body.appendChild(controlPanel);
 
-// Play button
-const playButton = document.createElement('button');
-playButton.innerText = 'Play';
-playButton.style.marginRight = '10px';
-playButton.onclick = togglePlay;
-controlPanel.appendChild(playButton);
+/*================================================================
 
-// Step Forward button
-const stepButton = document.createElement('button');
-stepButton.innerText = 'Step Forward';
-stepButton.onclick = stepForward;
-controlPanel.appendChild(stepButton);
+Control Panel
+
+// ================================================================*/
+// // Floating button panel for autonomous controls
+// // Add Font Awesome stylesheet for icons (add this to your HTML head or dynamically in JS)
+// const fontAwesomeLink = document.createElement('link');
+// fontAwesomeLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css';
+// fontAwesomeLink.rel = 'stylesheet';
+// document.head.appendChild(fontAwesomeLink);
+
+// // Create the control panel container
+// const controlPanel = document.createElement('div');
+// controlPanel.id = 'control-panel';
+// controlPanel.style.position = 'fixed';
+// controlPanel.style.top = '20px';
+// controlPanel.style.left = '20px';
+// controlPanel.style.padding = '10px';
+// controlPanel.style.background = 'linear-gradient(135deg, rgba(0, 10, 30, 0.9), rgba(0, 60, 90, 0.9))';
+// controlPanel.style.borderRadius = '10px';
+// controlPanel.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.5)';
+// controlPanel.style.zIndex = '1000';
+// controlPanel.style.display = 'flex';
+// controlPanel.style.gap = '10px';
+// document.body.appendChild(controlPanel);
+
+// // Utility function to create buttons with icons
+// function createIconButton(iconClass, title, onClick) {
+//     const button = document.createElement('button');
+//     button.title = title; // Tooltip text
+//     button.style.width = '20px';
+//     button.style.height = '20px';
+//     button.style.border = 'none';
+//     button.style.borderRadius = '50%';
+//     button.style.background = 'rgba(255, 255, 255, 0.1)';
+//     button.style.color = 'white';
+//     button.style.display = 'flex';
+//     button.style.alignItems = 'center';
+//     button.style.justifyContent = 'center';
+//     button.style.cursor = 'pointer';
+//     button.style.transition = 'background 0.3s';
+//     button.onmouseover = () => (button.style.background = 'rgba(255, 255, 255, 0.2)');
+//     button.onmouseout = () => (button.style.background = 'rgba(255, 255, 255, 0.1)');
+//     button.onclick = onClick;
+
+//     const icon = document.createElement('i');
+//     icon.className = iconClass; // Font Awesome class for the icon
+//     icon.style.fontSize = '20px';
+//     button.appendChild(icon);
+
+//     return button;
+// }
+
+// // Play button
+// const playButton = createIconButton('fas fa-play', 'Play', togglePlay);
+// controlPanel.appendChild(playButton);
+
+// // Step Forward button
+// const stepButton = createIconButton('fas fa-forward', 'Step Forward', stepForward);
+// controlPanel.appendChild(stepButton);
+
+// // Toggle Guidelines button
+// const toggleGuidelinesButton = createIconButton('fas fa-person-walking', 'Toggle Guidelines', toggleGuidelines);
+// controlPanel.appendChild(toggleGuidelinesButton);
+
+// // Toggle YOLO Processing button
+// const toggleYoloButton = createIconButton('fas fa-crosshairs', 'Toggle YOLO Processing', toggleYoloProcessing);
+// controlPanel.appendChild(toggleYoloButton);
+
+/*================================================================
+
+Stats Panel
+
+================================================================*/
+// Create the stats panel container
+const statsPanel = document.createElement('div');
+statsPanel.id = 'stats-panel';
+statsPanel.style.position = 'fixed';
+statsPanel.style.top = '20px';
+statsPanel.style.left = '20px';
+statsPanel.style.padding = '10px';
+statsPanel.style.background = 'linear-gradient(135deg, rgba(0, 10, 30, 0.9), rgba(0, 60, 90, 0.9))';
+statsPanel.style.borderRadius = '10px';
+statsPanel.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.5)';
+statsPanel.style.zIndex = '1000';
+statsPanel.style.color = 'white';
+statsPanel.style.fontFamily = 'Arial, sans-serif';
+statsPanel.style.fontSize = '14px';
+statsPanel.style.lineHeight = '1.5';
+document.body.appendChild(statsPanel);
+
+let drawTime = 0; // Variable to store the time taken for visualization
+let drawSpeed = 0;
+
+// Utility function to update stats
+function updateStats(distanceToGoal, inferenceSpeed) {
+    statsPanel.innerHTML = `
+        <div><strong>Distance to Goal:</strong> ${distanceToGoal.toFixed(2)} m</div>
+        <div><strong>Inference Speed:</strong> ${inferenceSpeed.toFixed(2)} ms</div>
+    `;
+}
+
+// Calculate the distance to the goal
+function calculateDistanceToGoal(camera, goalMarker) {
+    if (!goalMarker) return 0;
+    const cameraPosition = new THREE.Vector3();
+    camera.getWorldPosition(cameraPosition);
+    return (cameraPosition.distanceTo(goalMarker.position) / 40) - 1;
+}
+
+// Measure inference speed
+let inferenceStartTime = 0;
+let inferenceSpeed = 0;
+
+function startInferenceTimer() {
+    inferenceStartTime = performance.now();
+}
+
+function stopInferenceTimer() {
+    const inferenceEndTime = performance.now();
+    inferenceSpeed = inferenceEndTime - inferenceStartTime;
+}
+
+// Update stats periodically
+setInterval(() => {
+    const distanceToGoal = calculateDistanceToGoal(camera, goalMarker);
+    updateStats(distanceToGoal, inferenceSpeed);
+}, 500); // Update every 500ms
+
+// ----------------------------------------------------------------
+// GOAL MARKER
+// ----------------------------------------------------------------
+
+// Variables for the goal marker
+let goalMarker = null;
+
+function createDiamondMarker() {
+    // Create the upper cone
+    const upperConeGeometry = new THREE.ConeGeometry(5, 10, 4); // Base radius: 5, Height: 10, 4-sided cone
+    const upperConeMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 }); // Bright green
+    const upperCone = new THREE.Mesh(upperConeGeometry, upperConeMaterial);
+
+    // Create the lower cone
+    const lowerConeGeometry = new THREE.ConeGeometry(5, 10, 4); // Same dimensions as the upper cone
+    const lowerCone = new THREE.Mesh(lowerConeGeometry, upperConeMaterial);
+
+    // Flip the lower cone to point upwards
+    lowerCone.rotation.x = Math.PI;
+    lowerCone.position.y = 10; // Position the lower cone below the upper cone
+
+    // Group the two cones together
+    const diamond = new THREE.Group();
+    // diamond.add(upperCone);
+    diamond.add(lowerCone);
+
+    return diamond;
+}
+
+// Function to place the goal at a specific position
+function placeGoalAt(x, z) {
+    console.log('Placing goal...');
+
+    // If a goal marker already exists, remove it
+    if (goalMarker) {
+        scene.remove(goalMarker);
+    }
+
+    // Create a new diamond-shaped goal marker
+    goalMarker = createDiamondMarker();
+
+    // Calculate the height at the goal position
+    const heightX = Math.floor((x + width / 2) / width * geometry.parameters.widthSegments);
+    const heightZ = Math.floor((z + height / 2) / height * geometry.parameters.heightSegments);
+    const heightIndex = heightX * width + heightZ;
+    const terrainHeight = lastHeightmapData ? lastHeightmapData[heightIndex] : 0;
+
+    // Position the goal marker
+    goalMarker.position.set(x, terrainHeight + 5, z); // Slightly above the terrain
+    goalMarker.castShadow = true;
+
+    // Add the goal marker to the scene
+    scene.add(goalMarker);
+
+    console.log(`Goal placed at X: ${x}, Z: ${z}`);
+}
+
+let goalMarkerSet;
+
+// Event listener to handle mouse clicks for placing the goal
+function onSceneClick(event) {
+    // Calculate mouse position in normalized device coordinates (-1 to +1)
+    const mouse = new THREE.Vector2();
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    // Use raycaster to determine intersection with the terrain
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+
+    // Check for intersections with the plane
+    const intersects = raycaster.intersectObject(plane);
+
+    if (intersects.length > 0) {
+        const { x, z } = intersects[0].point; // Get the intersection point
+        placeGoalAt(x, z); // Place the goal at the clicked position
+    }
+    goalMarkerSet = true;
+}
+
+// Add event listener for mouse clicks
+window.addEventListener('click', onSceneClick);
+// State variables for toggling features
+let showGuidelines = true;
+let yoloProcessingActive = true;
+
+// Function to toggle guidelines visibility
+function toggleGuidelines() {
+    const guidelinesOverlay = document.getElementById('guidelines-overlay');
+    // Toggle visibility
+    showGuidelines = !showGuidelines;
+    if (showGuidelines) {
+        guidelinesOverlay.style.display = 'block'; // Make visible
+        guidelinesOverlay.style.visibility = 'visible';
+        guidelinesOverlay.style.opacity = '1';
+    } else {
+        guidelinesOverlay.style.display = 'none'; // Hide
+        guidelinesOverlay.style.visibility = 'hidden';
+        guidelinesOverlay.style.opacity = '0';
+    }
+}
+
+// Function to toggle YOLO processing
+function toggleYoloProcessing() {
+    const yoloOverlay = document.getElementById('yolo-overlay');
+    // Toggle visibility
+    yoloProcessingActive = !yoloProcessingActive;
+    if (yoloProcessingActive) {
+        yoloOverlay.style.display = 'block'; // Make visible
+        yoloOverlay.style.visibility = 'visible';
+        yoloOverlay.style.opacity = '1';
+    } else {
+        yoloOverlay.style.display = 'none'; // Hide
+        yoloOverlay.style.visibility = 'hidden';
+        yoloOverlay.style.opacity = '0';
+    }
+}
+// ----------------------------------------------------------------
+// MINIMAP
+// ----------------------------------------------------------------
+// Create the minimap canvas
+const minimapCanvas = document.createElement('canvas');
+minimapCanvas.id = 'minimap-canvas';
+minimapCanvas.style.position = 'absolute';
+minimapCanvas.style.top = '20px';
+minimapCanvas.style.right = '20px';
+minimapCanvas.style.width = '200px'; // Display size
+minimapCanvas.style.height = '200px';
+// minimapCanvas.style.border = '2px solid white'; // Optional border for styling
+minimapCanvas.style.zIndex = '1000'; // Ensure it's above the main canvas
+document.body.appendChild(minimapCanvas);
+
+// Set up the minimap context
+const minimapCtx = minimapCanvas.getContext('2d');
+minimapCanvas.width = 512; // Internal resolution for sharp rendering
+minimapCanvas.height = 512;
+
+// Render gridlines on the minimap
+function renderGridlines() {
+    const gridSize = 32; // Size of each grid cell in world coordinates
+    const minimapGridSize = minimapCanvas.width / (width / gridSize); // Scaled grid size for minimap
+
+    minimapCtx.strokeStyle = 'rgba(200, 200, 200, 0.5)'; // Light gray gridlines
+    minimapCtx.lineWidth = 1;
+
+    // Draw vertical gridlines
+    for (let x = 0; x <= minimapCanvas.width; x += minimapGridSize) {
+        minimapCtx.beginPath();
+        minimapCtx.moveTo(x, 0);
+        minimapCtx.lineTo(x, minimapCanvas.height);
+        minimapCtx.stroke();
+    }
+
+    // Draw horizontal gridlines
+    for (let y = 0; y <= minimapCanvas.height; y += minimapGridSize) {
+        minimapCtx.beginPath();
+        minimapCtx.moveTo(0, y);
+        minimapCtx.lineTo(minimapCanvas.width, y);
+        minimapCtx.stroke();
+    }
+}
+function renderCameraMarker() {
+    // Map camera position from world space to minimap space
+    const camX = ((camera.position.x + width / 2) / width) * minimapCanvas.width;
+    const camY = ((camera.position.z + height / 2) / height) * minimapCanvas.height; // No need to invert the Z-axis
+
+    // Get and normalize camera direction
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0; // Flatten direction to XZ plane
+    forward.normalize();
+
+    // Size of the direction indicator
+    const markerSize = 15;
+
+    // Calculate the triangle points
+    const tipX = camX + forward.x * markerSize;
+    const tipY = camY + forward.z * markerSize; // Correct orientation
+
+    // Calculate base points perpendicular to direction
+    const baseWidth = markerSize * 0.5;
+    const leftX = camX - forward.z * baseWidth;
+    const leftY = camY + forward.x * baseWidth; // Adjusted for flipped Y-axis
+    const rightX = camX + forward.z * baseWidth;
+    const rightY = camY - forward.x * baseWidth; // Adjusted for flipped Y-axis
+
+    // Draw the marker
+    minimapCtx.save();
+    minimapCtx.fillStyle = 'blue';
+    minimapCtx.strokeStyle = 'blue';
+    minimapCtx.lineWidth = 1;
+
+    // Draw filled triangle
+    minimapCtx.beginPath();
+    minimapCtx.moveTo(tipX, tipY);
+    minimapCtx.lineTo(leftX, leftY);
+    minimapCtx.lineTo(rightX, rightY);
+    minimapCtx.closePath();
+    minimapCtx.fill();
+    minimapCtx.stroke();
+
+    minimapCtx.restore();
+}
 
 
-let drivabilityScores = [];
+// Function to render the goal marker on the minimap
+function renderGoalOnMinimap() {
+    if (!goalMarker) return; // Skip if no goal marker exists
+
+    // Map goal position from world space to minimap space
+    const goalX = ((goalMarker.position.x + width / 2) / width) * minimapCanvas.width;
+    const goalY = ((goalMarker.position.z + height / 2) / height) * minimapCanvas.height;
+
+    // Draw goal marker on the minimap
+    minimapCtx.save();
+    minimapCtx.fillStyle = 'green'; // Bright green for the goal marker
+    minimapCtx.beginPath();
+    minimapCtx.arc(goalX, goalY, 5, 0, 2 * Math.PI); // Small circle
+    minimapCtx.fill();
+    minimapCtx.restore();
+}
+
+// Update the minimap in the animation loop
+function updateMinimap() {
+    minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height); // Clear the minimap
+    renderGridlines(); // Draw gridlines
+    renderCameraMarker(); // Draw the camera marker and view direction
+    renderGoalOnMinimap();
+
+    // Use global predictions to visualize obstacles on the minimap
+    predictions.forEach((pred) => {
+        plotObstacleOnMinimap(pred, camera, canvas.width, canvas.height, 640);
+    });
+}
 
 /*================================================================
 
@@ -334,6 +673,60 @@ function createWalls() {
     });
 
 }
+
+// =================================================================
+// OBJECTS
+// =================================================================
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+// dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.148.0/examples/js/libs/draco/'); // Path to Draco decoder
+const loader = new GLTFLoader();
+loader.setDRACOLoader(dracoLoader);
+
+// decorative space ship
+loader.load(
+    '/static/3dmodels/apollo.glb', // Replace with the actual path to your .glb file
+    (gltf) => {
+        // This callback is executed once the .glb is loaded
+        const model = gltf.scene; // Access the 3D model
+        scene.add(model); // Add the model to the scene
+
+        // Optional: Adjust position, rotation, and scale of the model
+        model.position.set(-100, 40, -100);
+        model.rotation.y = Math.PI / 2; // Rotate 90 degrees
+        model.scale.set(5, 5, 5);
+    },
+    (xhr) => {
+        // Optional: Progress callback
+        console.log(`Loading progress: ${(xhr.loaded / xhr.total) * 100}%`);
+    },
+    (error) => {
+        // Error callback
+        console.error('An error occurred while loading the .glb file:', error);
+    }
+);
+
+// Person for YOLO Testing
+// // Load an image texture
+// const imageLoader = new THREE.TextureLoader();
+// const personTexture = imageLoader.load('../static/textures/person.png', () => {
+//     console.log('Person image loaded.');
+// });
+
+// // Create a plane with the image texture
+// const personPlaneGeometry = new THREE.PlaneGeometry(100, 100); // Adjust size as needed
+// const personPlaneMaterial = new THREE.MeshStandardMaterial({
+//     map: personTexture,
+//     side: THREE.DoubleSide, // Ensure the texture is visible on both sides
+// });
+// const personPlane = new THREE.Mesh(personPlaneGeometry, personPlaneMaterial);
+// personPlane.position.set(0, 50, 0); // Adjust position as needed
+// scene.add(personPlane);
+
+// // Optional: Add lighting to better visualize the plane
+// const planeLight = new THREE.PointLight(0xffffff, 1, 500);
+// planeLight.position.set(50, 150, 50);
+// scene.add(planeLight);
 
 // // 2a. DROP SAMPLE BEACON CYAN
 // function dropColorBlockBeaconCyan() {
@@ -604,10 +997,58 @@ function updateAutonomousMode() {
     }
 }
 
+function trackCameraMovement() {
+    const currentPosition = new THREE.Vector3();
+    const currentQuaternion = new THREE.Quaternion();
+
+    camera.getWorldPosition(currentPosition);
+    camera.getWorldQuaternion(currentQuaternion);
+
+    // Calculate position and rotation deltas
+    const positionDelta = currentPosition.clone().sub(lastCameraPosition);
+    const rotationDelta = lastCameraQuaternion.clone().inverse().multiply(currentQuaternion);
+
+    lastCameraPosition.copy(currentPosition);
+    lastCameraQuaternion.copy(currentQuaternion);
+
+    return { positionDelta, rotationDelta };
+}
+
+function updateBoundingBoxesBasedOnCamera() {
+    const canvasWidth = renderer.domElement.width;
+    const canvasHeight = renderer.domElement.height;
+
+    // Get the camera movement deltas
+    const { positionDelta, rotationDelta } = trackCameraMovement();
+
+    predictions.forEach((pred) => {
+        const { trackId } = pred;
+
+        // Get the bounding box element
+        const bbox = document.getElementById(trackId);
+        if (!bbox) return;
+
+        // Get the current world position of the obstacle
+        const worldPosition = getObstacleWorldPosition(pred, camera, canvasWidth, canvasHeight);
+        if (!worldPosition) return;
+
+        // Apply the position delta to the world position
+        worldPosition.add(positionDelta);
+
+        // Project the new world position to screen space
+        const screenPosition = projectToScreen(worldPosition, camera, canvasWidth, canvasHeight);
+
+        // Update the bounding box position on the screen
+        bbox.style.left = `${screenPosition.x}px`;
+        bbox.style.top = `${screenPosition.y}px`;
+    });
+}
+
 // Modify the animate function to update the camera
 function animate() {
     requestAnimationFrame(animate);
     updateCamera(); // Call the camera update function
+    // updateBoundingBoxes(camera, renderer.domElement.width, renderer.domElement.height);
     updateAutonomousMode(); // Autonomous camera updates
     renderer.render(scene, camera);
 }
@@ -634,22 +1075,97 @@ function adjustGuidelinesOverlay() {
 window.addEventListener('resize', adjustGuidelinesOverlay);
 adjustGuidelinesOverlay(); // Initial call
 
-// Function to update drivability guidelines on overlay
-function updateGuidelines(drivabilityScores) {
+function updateGuidelines(drivabilityScores, obstacles, goalPosition) {
+    if (!showGuidelines) return; // Skip updates if guidelines are hidden
     guidelinesOverlay.innerHTML = ''; // Clear previous guidelines
 
     const numSlices = drivabilityScores.length;
-    const sliceWidth = canvas.width / numSlices; // Use canvas width, not window
-    const overlayHeight = canvas.height; // Use canvas height, not window
+    const sliceWidth = canvas.width / numSlices; // Width of each slice on the canvas
+    const overlayHeight = canvas.height; // Full height of the overlay
+    const sliceWidthWorld = width / numSlices; // Slice width in world coordinates
 
-    // Find the three adjacent regions with the highest combined score
-    let maxSum = -Infinity;
-    let maxIndex = 0;
-    for (let i = 0; i < numSlices - 2; i++) {
+    // Convert obstacles to screen space
+    const screenSpaceObstacles = obstacles.map((obstacle) => {
+        const screenPos = new THREE.Vector3(obstacle.position.x, obstacle.position.y, obstacle.position.z).project(camera);
+        return {
+            x: ((screenPos.x + 1) / 2) * canvas.width,
+            y: ((-screenPos.y + 1) / 2) * canvas.height,
+            z: screenPos.z, // Keep the projected Z-coordinate for depth comparison
+        };
+    });
+
+    // Convert goal position to screen space
+    let goalScreenPos = null;
+    let goalDepth = null;
+
+    if (goalPosition) {
+        const projectedGoal = new THREE.Vector3(goalPosition.x, goalPosition.y, goalPosition.z).project(camera);
+        goalScreenPos = {
+            x: ((projectedGoal.x + 1) / 2) * canvas.width,
+            y: ((-projectedGoal.y + 1) / 2) * canvas.height,
+        };
+        goalDepth = projectedGoal.z; // Capture the depth (z) of the goal
+    }
+    
+    // Update drivability scores with obstacles in screen space
+    screenSpaceObstacles.forEach((obstacle) => {
+        // Exclude obstacles further from the camera than the goal
+        if (goalDepth !== null && obstacle.z > goalDepth) {
+            return; // Skip this obstacle
+        }
+    
+        const sliceIndex = Math.floor(obstacle.x / sliceWidth);
+        if (sliceIndex >= 0 && sliceIndex < numSlices) {
+            // Calculate the penalty weight based on proximity to the camera
+            const proximityWeight = Math.max(0, 1 - obstacle.y / canvas.height); // Closer obstacles have higher weights
+            const penalty = proximityWeight * proximityWeight; // Scale penalty by weight
+
+            // Apply penalty to the slice containing the obstacle
+            drivabilityScores[sliceIndex] -= penalty;
+
+            // Optionally penalize adjacent slices with reduced penalty
+            const adjacentPenalty = 0.1 * proximityWeight;
+            if (sliceIndex - 1 >= 0) drivabilityScores[sliceIndex - 1] -= adjacentPenalty;
+            if (sliceIndex + 1 < numSlices) drivabilityScores[sliceIndex + 1] -= adjacentPenalty;
+        }
+    });
+
+
+    // Boost scores based on proximity to the goal in screen space
+    if (goalScreenPos) {
+        let closestSliceIndex = -1;
+        let closestDistance = Infinity;
+
+        for (let i = 0; i < numSlices; i++) {
+            const sliceCenterX = (i + 0.5) * sliceWidth; // Center of the slice in screen space
+            const distanceToGoal = Math.abs(sliceCenterX - goalScreenPos.x); // Only consider horizontal distance
+
+            // Apply a stronger boost for closer slices
+            const weight = 0.2; // Adjust weight to emphasize goal proximity
+            drivabilityScores[i] += Math.max(1 - distanceToGoal / canvas.width, 0) * weight;
+
+            // Track the closest slice to the goal
+            if (distanceToGoal < closestDistance) {
+                closestDistance = distanceToGoal;
+                closestSliceIndex = i;
+            }
+        }
+
+        // Add a flat gain to the closest slice
+        if (closestSliceIndex >= 0) {
+            const flatGain = 0.1; // Adjust this value to control the flat gain
+            drivabilityScores[closestSliceIndex] += flatGain;
+        }
+    }
+
+    // Find the best 5-slice region index based on updated drivability scores
+    let bestIndex = 0;
+    let bestScore = -Infinity;
+    for (let i = 0; i < numSlices - 4; i++) { // Loop until numSlices - 4 for 5 slices
         const sum = drivabilityScores[i] + drivabilityScores[i + 1] + drivabilityScores[i + 2] + drivabilityScores[i + 3] + drivabilityScores[i + 4];
-        if (sum > maxSum) {
-            maxSum = sum;
-            maxIndex = i;
+        if (sum > bestScore) {
+            bestScore = sum;
+            bestIndex = i; // Start index of the best region
         }
     }
 
@@ -663,60 +1179,474 @@ function updateGuidelines(drivabilityScores) {
         region.style.position = 'absolute';
         region.style.top = '0';
 
-        // Highlight the three adjacent regions with the highest scores
-        if (i >= maxIndex && i < maxIndex + 5) {
-            region.style.backgroundColor = 'rgba(173, 216, 230, 0.2)'; // Light blue with low opacity
+        // Highlight the best path (5 slices)
+        if (i >= bestIndex && i < bestIndex + 5) {
+            region.style.backgroundColor = 'rgba(0, 132, 255, 0.1)'; // Cyan for best path
         }
 
-        // Create line for slice boundary
-        const line = document.createElement('div');
-        line.className = 'guideline-line';
-        line.style.left = `${(i + 1) * sliceWidth}px`;
-        line.style.height = `${overlayHeight}px`;
-        guidelinesOverlay.appendChild(line);
+        //         // // Create score label
+//         // const score = document.createElement('span');
+//         // score.className = 'guideline-score';
+//         // score.innerText = drivabilityScores[i].toFixed(2);
+//         // score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
+//         // score.style.top = `${overlayHeight / 3}px`;
+//         // guidelinesOverlay.appendChild(score);
 
-        // Create score label
-        const score = document.createElement('span');
-        score.className = 'guideline-score';
-        score.innerText = drivabilityScores[i].toFixed(2);
-        score.style.left = `${i * sliceWidth + sliceWidth / 2}px`;
-        score.style.top = `${overlayHeight / 3}px`;
-        guidelinesOverlay.appendChild(score);
-
-        // Append region div for background color
         guidelinesOverlay.appendChild(region);
     }
 }
 
 // Main script
-const worker = new Worker('processCanvasWorker.js');
+const cvWorker = new Worker('/static/opencvWorker.js');
 
 // Handle message from the worker
-worker.onmessage = function (event) {
+cvWorker.onmessage = function (event) {
     drivabilityScores = event.data.drivabilityScores;
-    updateGuidelines(drivabilityScores); // Update guidelines with the processed scores
+
+    // Convert YOLO predictions to 3D world positions
+    const obstacles = predictions.map(pred => ({
+        position: getObstacleWorldPosition(pred, camera, canvas.width, canvas.height)
+    })).filter(obstacle => obstacle.position);
+
+    // Get goal position
+    const goalPosition = goalMarker ? goalMarker.position : null;
+
+    // Update guidelines with the processed scores
+    updateGuidelines(drivabilityScores, obstacles, goalPosition)
 };
 
-function processCanvas() {
-    const gl = renderer.getContext();
-    const width = renderer.domElement.width;
-    const height = renderer.domElement.height;
-    const pixels = new Uint8Array(width * height * 4);
+// After WebGL initialization
+setupOverlay();
 
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+// Declare variables for flipped dimensions
+let flippedWidth = 0;
+let flippedHeight = 0;
 
-    // Send pixel data to worker
-    worker.postMessage({ pixels, width, height });
+// Instantiate the pixel worker
+const pixelWorker = new Worker('/static/pixelWorker.js');
+
+// Handle messages from the worker
+pixelWorker.onmessage = function (event) {
+    const { type, pixels } = event.data;
+    
+    if (type === 'flipped') {
+        console.log('Pixels flipped:', pixels);
+
+        // Proceed to resizing after flipping is complete
+        if (yoloProcessingActive) {
+            pixelWorker.postMessage({
+                type: 'resize',
+                data: { sourcePixels: pixels, sourceWidth: flippedWidth, sourceHeight: flippedHeight, targetWidth: 640, targetHeight: 640 },
+            });
+        }
+    }
+
+    if (type === 'resized') {
+        console.log('Pixels resized:', pixels);
+    
+        // Prepare the binary frame data
+        const frameWidth = 640;
+        const frameHeight = 640;
+    
+        // Create an ArrayBuffer to hold width, height, and pixel data
+        const buffer = new ArrayBuffer(8 + pixels.length); // 4 bytes each for width and height
+        const view = new DataView(buffer);
+    
+        // Pack width and height as 32-bit integers
+        view.setUint32(0, frameWidth); // Width at byte offset 0
+        view.setUint32(4, frameHeight); // Height at byte offset 4
+    
+        // Append pixel data starting at byte offset 8
+        const pixelData = new Uint8Array(buffer, 8);
+        pixelData.set(pixels);
+    
+        // Send the binary frame data over WebSocket
+        if (websocket.readyState === WebSocket.OPEN) {
+            websocket.send(buffer);
+            console.log('Binary frame data sent to WebSocket');
+        }
+    }
+};
+
+// Establish WebSocket connection
+const websocket = new WebSocket("ws://localhost:8000/ws/predict");
+
+websocket.onopen = () => {
+    console.log("WebSocket connection established");
+};
+
+websocket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.error) {
+        console.error("Error from WebSocket:", data.error);
+    } else {
+        // Update the global predictions variable
+        predictions = data.predictions;
+        stopInferenceTimer();
+        const overlayCanvas = document.getElementById('yolo-overlay');
+
+        // Update YOLO visualization and minimap
+        const drawStartTime = performance.now();
+
+        visualizePredictions(overlayCanvas.width, overlayCanvas.height, 640);
+        updateMinimap(); // Update minimap with the latest predictions
+        const drawEndTime = performance.now();
+        drawSpeed = drawEndTime - drawStartTime;
+
+    }
+};
+
+websocket.onerror = (error) => {
+    console.error("WebSocket error:", error);
+};
+
+websocket.onclose = () => {
+    console.log("WebSocket connection closed");
+};
+
+// Variables to track the camera's last known state
+let lastCameraPosition = new THREE.Vector3();
+let lastCameraQuaternion = new THREE.Quaternion();
+let cameraMoved = false;
+
+// Function to check if the camera has moved
+function hasCameraMoved() {
+    if(goalMarkerSet){
+        goalMarkerSet = false;
+        return true;
+    }
+    const currentPosition = new THREE.Vector3();
+    const currentQuaternion = new THREE.Quaternion();
+
+    camera.getWorldPosition(currentPosition); // Get current position
+    camera.getWorldQuaternion(currentQuaternion); // Get current orientation
+
+    // Check if position or orientation has changed
+    cameraMoved =
+        !currentPosition.equals(lastCameraPosition) ||
+        !currentQuaternion.equals(lastCameraQuaternion);
+
+    // Update the last known position and orientation
+    lastCameraPosition.copy(currentPosition);
+    lastCameraQuaternion.copy(currentQuaternion);
+
+    return cameraMoved;
+}
+let isProcessingYOLO = false;
+
+// Function to process the WebGL canvas
+async function processCanvas() {
+    if (!showGuidelines && !yoloProcessingActive) return;
+
+    // Check if the camera has moved
+    if (!hasCameraMoved()) {
+        console.log("Camera has not moved. Skipping YOLO processing.");
+        return; // Skip processing if the camera hasn't moved
+    }
+    
+    if (isProcessingYOLO) return; // Ensure only one process is active at a time
+    isProcessingYOLO = true;
+
+    try {
+        startInferenceTimer();
+
+        const canvas = renderer.domElement; // WebGL canvas
+        const width = canvas.width;
+        const height = canvas.height;
+
+        const gl = renderer.getContext();
+        const rgbaPixels = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgbaPixels);
+        // Convert RGBA to grayscale
+        const grayscalePixels = new Uint8Array(width * height);
+        for (let i = 0; i < rgbaPixels.length; i += 4) {
+            // Use luminance formula to compute grayscale value
+            const r = rgbaPixels[i];
+            const g = rgbaPixels[i + 1];
+            const b = rgbaPixels[i + 2];
+            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+            grayscalePixels[i / 4] = gray; // Store the grayscale value
+        }
+
+        // Update flipped dimensions
+        flippedWidth = width;
+        flippedHeight = height;
+
+        // Send grayscale data to the pixelWorker
+        pixelWorker.postMessage({ type: 'flip', data: { pixels: grayscalePixels, width, height } });
+
+        // Send grayscale data to the cvWorker if guidelines are enabled
+        if (showGuidelines) {
+            cvWorker.postMessage({ type: 'process', pixels: grayscalePixels, width, height });
+        }
+
+        console.log("YOLO Processing Active:", yoloProcessingActive);
+    } catch (error) {
+        console.error("Error processing canvas:", error);
+    } finally {
+        isProcessingYOLO = false; // Reset the flag
+        updateMinimap(); // Minimap render
+    }
 }
 
-// Call processCanvas periodically or on demand
-setInterval(processCanvas, 1000); // Or integrate with your animate pipeline
+// Debug Function to save ImageData to a file
+function saveImageData(imageData) {
+    // Create a temporary canvas
+    const tempCanvas = document.createElement('canvas');
+    const ctx = tempCanvas.getContext('2d');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
 
-// Ensure OpenCV.js is ready before running
-function openCvReady() {
-    cv['onRuntimeInitialized'] = () => {
-        cv.FS_createPath("/", "working", true, true);
-        setInterval(processCanvas, 10); // Run processing every 500 ms
+    // Put ImageData onto the canvas
+    ctx.putImageData(imageData, 0, 0);
+
+    // Convert the canvas to a Blob and save it
+    tempCanvas.toBlob((blob) => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'webgl_image.png'; // File name
+        link.click();
+    }, 'image/png');
+}
+
+function initializeYoloOverlay() {
+    // Create YOLO overlay canvas dynamically
+    let overlayCanvas = document.getElementById('yolo-overlay');
+    if (!overlayCanvas) {
+        overlayCanvas = document.createElement('canvas');
+        overlayCanvas.id = 'yolo-overlay';
+        document.body.appendChild(overlayCanvas);
+    }
+
+    // Style the overlay canvas
+    overlayCanvas.style.position = 'absolute';
+    overlayCanvas.style.top = '0';
+    overlayCanvas.style.left = '0';
+    overlayCanvas.style.pointerEvents = 'none'; // Prevent user interaction
+    overlayCanvas.style.zIndex = '10'; // Ensure it overlays other elements
+}
+
+function adjustYoloOverlay() {
+    const overlayCanvas = document.getElementById('yolo-overlay');
+    const webglCanvas = renderer.domElement;
+
+    // Match size and position with the WebGL canvas
+    overlayCanvas.width = webglCanvas.width;
+    overlayCanvas.height = webglCanvas.height;
+
+    const rect = webglCanvas.getBoundingClientRect();
+    overlayCanvas.style.top = `${rect.top}px`;
+    overlayCanvas.style.left = `${rect.left}px`;
+}
+
+// Call this function once WebGL is initialized
+function setupOverlay() {
+    initializeYoloOverlay();
+    adjustYoloOverlay();
+
+    // Adjust the overlay dynamically on window resize
+    window.addEventListener('resize', adjustYoloOverlay);
+}
+function plotObstacleOnMinimap(prediction, camera, canvasWidth, canvasHeight, yoloInputSize = 640) {
+    // Get bounding box center in YOLO input coordinates
+    const [x1, y1, x2, y2] = prediction.box;
+    const objectCenterX = (x1 + x2) / 2;
+    const objectCenterY = (y1 + y2) / 2;
+
+    // Scale to canvas size
+    const scaledX = (objectCenterX / yoloInputSize) * canvasWidth;
+    const scaledY = (objectCenterY / yoloInputSize) * canvasHeight;
+
+    // Convert to NDC (Normalized Device Coordinates)
+    const ndcX = (scaledX / canvasWidth) * 2 - 1;
+    const ndcY = -(scaledY / canvasHeight) * 2 + 1;
+
+    // Create ray from camera through the point
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+    // Define ground plane
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Y = 0
+
+    // Find intersection with the ground plane
+    const intersectionPoint = new THREE.Vector3();
+    raycaster.ray.intersectPlane(groundPlane, intersectionPoint);
+
+    // If no intersection is found, return
+    if (!intersectionPoint) {
+        console.warn('No intersection found with ground plane');
+        return;
+    }
+
+    // Convert world position to minimap coordinates
+    const minimapX = ((intersectionPoint.x + width / 2) / width) * minimapCanvas.width;
+    const minimapY = ((intersectionPoint.z + height / 2) / height) * minimapCanvas.height;
+    
+    // Draw on minimap
+    minimapCtx.save();
+    minimapCtx.fillStyle = 'red'; // Obstacle color
+    minimapCtx.fillRect(minimapX, minimapY, 20,20); // Draw a small circle
+    minimapCtx.restore();
+}
+// Function to convert YOLO bounding box to 3D world position
+function getObstacleWorldPosition(prediction, camera, canvasWidth, canvasHeight, yoloInputSize = 640) {
+    const [x1, y1, x2, y2] = prediction.box;
+    const objectCenterX = (x1 + x2) / 2;
+    const objectCenterY = (y1 + y2) / 2;
+
+    const scaledX = (objectCenterX / yoloInputSize) * canvasWidth;
+    const scaledY = (objectCenterY / yoloInputSize) * canvasHeight;
+
+    const ndcX = (scaledX / canvasWidth) * 2 - 1;
+    const ndcY = -(scaledY / canvasHeight) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Y = 0
+    const intersectionPoint = new THREE.Vector3();
+
+    if (raycaster.ray.intersectPlane(groundPlane, intersectionPoint)) {
+        return intersectionPoint;
+    }
+    return null;
+}
+// Track predictions across frames
+let previousPredictions = [];
+
+function computeIoU(boxA, boxB) {
+    const x1 = Math.max(boxA[0], boxB[0]);
+    const y1 = Math.max(boxA[1], boxB[1]);
+    const x2 = Math.min(boxA[2], boxB[2]);
+    const y2 = Math.min(boxA[3], boxB[3]);
+
+    const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    const areaA = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1]);
+    const areaB = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1]);
+
+    const union = areaA + areaB - intersection;
+    return intersection / union;
+}
+
+function visualizePredictions(canvasWidth, canvasHeight, yoloInputSize = 640) {
+    const overlayContainer = document.getElementById('yolo-overlay');
+    if (!overlayContainer) {
+        console.error('Overlay container not found');
+        return;
+    }
+
+    const xScale = canvasWidth / yoloInputSize;
+    const yScale = canvasHeight / yoloInputSize;
+
+    const classLabels = ['Hole', 'Rock'];
+    const classColors = {
+        0: 'rgba(75, 163, 251, 0.8)',
+        1: 'rgba(0, 200, 255, 0.8)',
     };
+
+    const activeBoxes = new Set();
+    const updatedPredictions = [];
+
+    // Raycaster setup
+    const raycaster = new THREE.Raycaster();
+    const cameraPosition = new THREE.Vector3();
+    camera.getWorldPosition(cameraPosition);
+
+    const goalPosition = goalMarker ? goalMarker.position : null;
+
+    if (goalPosition) {
+        const goalDirection = new THREE.Vector3()
+            .subVectors(goalPosition, cameraPosition)
+            .normalize();
+        raycaster.set(cameraPosition, goalDirection);
+    }
+
+    predictions.forEach((pred, index) => {
+        const { box, score, class: classIndex } = pred;
+        const [x1, y1, x2, y2] = box;
+
+        const scaledX1 = x1 * xScale;
+        const scaledY1 = y1 * yScale;
+        const scaledX2 = x2 * xScale;
+        const scaledY2 = y2 * yScale;
+
+        const width = scaledX2 - scaledX1;
+        const height = scaledY2 - scaledY1;
+
+        // Convert bounding box center to world position
+        const obstaclePosition = getObstacleWorldPosition(pred, camera, canvasWidth, canvasHeight);
+
+        // Skip rendering if the obstacle is on the ray to the goal
+        if (goalPosition && obstaclePosition) {
+            const distanceToGoal = raycaster.ray.distanceToPoint(obstaclePosition);
+            if (distanceToGoal < 20) {
+                // Skip this prediction if it lies on the ray
+                return;
+            }
+        }
+
+        // Match this prediction with the closest previous prediction
+        let trackId = null;
+        let maxIoU = 0;
+
+        previousPredictions.forEach((prev) => {
+            const iou = computeIoU(box, prev.box);
+            if (iou > maxIoU) {
+                maxIoU = iou;
+                trackId = prev.trackId;
+            }
+        });
+
+        if (!trackId || maxIoU < 0.5) {
+            trackId = `bbox-${Date.now()}-${index}`;
+        }
+
+        updatedPredictions.push({ ...pred, trackId });
+        activeBoxes.add(trackId);
+
+        let bbox = document.getElementById(trackId);
+        if (!bbox) {
+            bbox = document.createElement('div');
+            bbox.id = trackId;
+            bbox.className = 'bounding-box';
+            bbox.style.borderColor = classColors[classIndex] || 'rgba(255, 0, 0, 0.8)';
+
+            const label = document.createElement('span');
+            label.className = 'bounding-box-label';
+            label.innerText = `${classLabels[classIndex] || `Class ${classIndex}`}, ${score.toFixed(2)}`;
+            bbox.appendChild(label);
+
+            overlayContainer.appendChild(bbox);
+        }
+
+        bbox.style.left = `${scaledX1}px`;
+        bbox.style.top = `${scaledY1}px`;
+        bbox.style.width = `${width}px`;
+        bbox.style.height = `${height}px`;
+    });
+
+    Array.from(overlayContainer.children).forEach((child) => {
+        if (!activeBoxes.has(child.id)) {
+            overlayContainer.removeChild(child);
+        }
+    });
+
+    previousPredictions = updatedPredictions;
 }
-openCvReady();
+
+// Adjust the YOLO overlay on window resize
+window.addEventListener('resize', adjustYoloOverlay);
+adjustYoloOverlay(); // Initial adjustment
+
+// Delay in milliseconds to allow other systems to engage
+const setupTime = 2000; // 2 seconds setup time
+
+// Function to start the periodic processCanvas execution
+function startProcessing() {
+  setInterval(processCanvas, 300); // Start processing every 300ms
+}
+
+// Delay the start of the processing
+setTimeout(startProcessing, setupTime);
+
+console.log(`Starting processCanvas execution after ${setupTime} ms setup time.`);
